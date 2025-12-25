@@ -66,15 +66,24 @@
             <div class="tiktok-avatar-container" @click="onUserClick(authorData.id)">
               <img :src="authorData.avatar" :alt="authorData.name" class="tiktok-avatar" @error="handleAvatarError" />
             </div>
+            <span class="tiktok-username" @click="onUserClick(authorData.id)">{{ authorData.name }}</span>
             <FollowButton v-if="!isCurrentUserPost" :is-following="authorData.isFollowing" :user-id="authorData.id"
               @follow="handleFollow" @unfollow="handleUnfollow" class="tiktok-follow-btn" />
           </div>
+          <!-- 标题 -->
+          <div v-if="postData.title" class="tiktok-title">{{ postData.title }}</div>
+          <!-- 详情内容（可展开） -->
+          <div v-if="postData.content" class="tiktok-content-wrapper">
+            <div class="tiktok-content" :class="{ 'expanded': isContentExpanded }">
+              <ContentRenderer :text="postData.content" />
+            </div>
+            <span v-if="shouldShowExpandBtn" class="tiktok-expand-btn" @click="toggleContentExpand">
+              {{ isContentExpanded ? '收起' : '展开' }}
+            </span>
+          </div>
+          <!-- 话题标签 -->
           <div class="tiktok-tags">
             <span v-for="tag in postData.tags" :key="tag" class="tiktok-tag" @click="handleTagClick(tag)">#{{ tag }}</span>
-          </div>
-          <div v-if="postData.location" class="tiktok-location">
-            <SvgIcon name="hash" width="14" height="14" />
-            <span>{{ postData.location }}</span>
           </div>
         </div>
 
@@ -163,7 +172,8 @@
           <div v-if="isVideoNote && isMobile" class="drag-handle" @click="toggleInfoPanel">
             <div class="drag-handle-bar"></div>
           </div>
-          <div class="author-wrapper" ref="authorWrapper" @click="toggleInfoPanel">
+          <!-- 移动端视频笔记模式隐藏作者信息（已在抖音风格叠加层显示） -->
+          <div v-if="!(isVideoNote && isMobile)" class="author-wrapper" ref="authorWrapper" @click="toggleInfoPanel">
             <div class="author-info">
               <div class="author-avatar-container">
                 <img :src="authorData.avatar" :alt="authorData.name" class="author-avatar "
@@ -240,7 +250,8 @@
                   :class="{ active: index === currentImageIndex }" @click="goToImage(index)"></span>
               </div>
             </div>
-            <div class="post-content">
+            <!-- 移动端视频笔记模式不显示标题、详情等（已在抖音风格叠加层显示） -->
+            <div v-if="!(isVideoNote && isMobile)" class="post-content">
               <h2 class="post-title">{{ postData.title }}</h2>
               <p class="post-text">
                 <ContentRenderer :text="postData.content" />
@@ -681,6 +692,23 @@ const toggleInfoPanel = () => {
   if (isVideoNote.value && isMobile.value) {
     isInfoPanelExpanded.value = !isInfoPanelExpanded.value
   }
+}
+
+// 抖音风格内容展开状态
+const isContentExpanded = ref(false)
+const CONTENT_MAX_LENGTH = 50 // 内容超过这个长度显示展开按钮
+
+// 是否显示展开按钮
+const shouldShowExpandBtn = computed(() => {
+  const content = postData.value?.content || ''
+  // 去除HTML标签后计算长度
+  const plainText = content.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+  return plainText.length > CONTENT_MAX_LENGTH
+})
+
+// 切换内容展开状态
+const toggleContentExpand = () => {
+  isContentExpanded.value = !isContentExpanded.value
 }
 
 // 视频进度与音量记忆
@@ -5040,6 +5068,62 @@ function handleAvatarError(event) {
 
   .tiktok-follow-btn {
     transform: scale(0.9);
+  }
+
+  /* 用户名 */
+  .tiktok-username {
+    color: white;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  .tiktok-username:hover {
+    text-decoration: underline;
+  }
+
+  /* 标题 */
+  .tiktok-title {
+    color: white;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    line-height: 1.4;
+  }
+
+  /* 内容详情（可展开） */
+  .tiktok-content-wrapper {
+    margin-bottom: 8px;
+  }
+
+  .tiktok-content {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    line-height: 1.5;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .tiktok-content.expanded {
+    -webkit-line-clamp: unset;
+    display: block;
+  }
+
+  .tiktok-expand-btn {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 4px;
+    display: inline-block;
+  }
+
+  .tiktok-expand-btn:hover {
+    color: white;
   }
 
   .tiktok-tags {
