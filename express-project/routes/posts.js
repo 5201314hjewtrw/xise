@@ -551,6 +551,164 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
+// 获取关注用户的笔记列表
+router.get('/following', authenticateToken, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    const sort = req.query.sort || 'time'; // 排序方式：time（最新）或 hot（热度）
+    const type = req.query.type ? parseInt(req.query.type) : null;
+    const currentUserId = req.user.id;
+
+    // 首先检查用户是否有关注的人
+    const [followingCount] = await pool.execute(
+      'SELECT COUNT(*) as count FROM follows WHERE follower_id = ?',
+      [currentUserId.toString()]
+    );
+
+    const hasFollowing = followingCount[0].count > 0;
+
+    if (!hasFollowing) {
+      // 如果用户没有关注任何人，返回推荐用户列表
+      const [recommendedUsers] = await pool.execute(
+        `SELECT u.id, u.user_id, u.nickname, u.avatar, u.bio, u.location, u.fans_count, u.verified,
+                (SELECT COUNT(*) FROM posts WHERE user_id = u.id AND is_draft = 0) as post_count
+         FROM users u
+         WHERE u.id != ? AND u.is_active = 1
+         ORDER BY u.fans_count DESC
+         LIMIT 10`,
+        [currentUserId.toString()]
+      );
+
+      // 检查每个推荐用户的关注状态
+      for (let user of recommendedUsers) {
+        user.isFollowing = false;
+        user.buttonType = 'follow';
+      }
+
+      return res.json({
+        code: RESPONSE_CODES.SUCCESS,
+        message: 'success',
+        data: {
+          posts: [],
+          recommendedUsers,
+          hasFollowing: false,
+          pagination: {
+            page: 1,
+            limit,
+            total: 0,
+            pages: 0
+          }
+        }
+      });
+    }
+
+    // 构建排序条件
+    let orderBy = '';
+    if (sort === 'hot') {
+      // 热度排序：综合点赞、评论、收藏和浏览量
+      orderBy = 'ORDER BY (p.like_count * 3 + p.comment_count * 2 + p.collect_count * 2 + p.view_count * 0.1) DESC, p.created_at DESC';
+    } else {
+      // 时间排序：最新发布的在前
+      orderBy = 'ORDER BY p.created_at DESC';
+    }
+
+    // 构建类型筛选条件
+    let typeCondition = '';
+    let queryParams = [currentUserId.toString()];
+    if (type) {
+      typeCondition = 'AND p.type = ?';
+      queryParams.push(type.toString());
+    }
+
+    // 获取关注用户的笔记
+    const query = `
+      SELECT p.*, u.nickname, u.avatar as user_avatar, u.user_id as author_account, u.id as author_auto_id, u.location, u.verified, c.name as category
+      FROM posts p
+      LEFT JOIN users u ON p.user_id = u.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE p.is_draft = 0 
+        AND p.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
+        ${typeCondition}
+      ${orderBy}
+      LIMIT ? OFFSET ?
+    `;
+    queryParams.push(limit.toString(), offset.toString());
+
+    const [rows] = await pool.execute(query, queryParams);
+
+    // 获取每个笔记的图片、标签和用户点赞收藏状态
+    for (let post of rows) {
+      // 根据笔记类型获取图片或视频封面
+      if (post.type === 2) {
+        // 视频笔记：获取视频封面
+        const [videos] = await pool.execute('SELECT video_url, cover_url FROM post_videos WHERE post_id = ?', [post.id]);
+        post.images = videos.length > 0 && videos[0].cover_url ? [videos[0].cover_url] : [];
+        post.video_url = videos.length > 0 ? videos[0].video_url : null;
+        post.image = videos.length > 0 && videos[0].cover_url ? videos[0].cover_url : null;
+      } else {
+        // 图文笔记：获取笔记图片
+        const [images] = await pool.execute('SELECT image_url FROM post_images WHERE post_id = ?', [post.id]);
+        post.images = images.map(img => img.image_url);
+        post.image = images.length > 0 ? images[0].image_url : null;
+      }
+
+      // 获取笔记标签
+      const [tags] = await pool.execute(
+        'SELECT t.id, t.name FROM tags t JOIN post_tags pt ON t.id = pt.tag_id WHERE pt.post_id = ?',
+        [post.id]
+      );
+      post.tags = tags;
+
+      // 检查当前用户是否已点赞和收藏
+      const [likeResult] = await pool.execute(
+        'SELECT id FROM likes WHERE user_id = ? AND target_type = 1 AND target_id = ?',
+        [currentUserId, post.id]
+      );
+      post.liked = likeResult.length > 0;
+
+      const [collectResult] = await pool.execute(
+        'SELECT id FROM collections WHERE user_id = ? AND post_id = ?',
+        [currentUserId, post.id]
+      );
+      post.collected = collectResult.length > 0;
+    }
+
+    // 获取关注用户笔记总数
+    let countQuery = `
+      SELECT COUNT(*) as total FROM posts p
+      WHERE p.is_draft = 0 
+        AND p.user_id IN (SELECT following_id FROM follows WHERE follower_id = ?)
+        ${typeCondition}
+    `;
+    let countParams = [currentUserId.toString()];
+    if (type) {
+      countParams.push(type.toString());
+    }
+    const [countResult] = await pool.execute(countQuery, countParams);
+    const total = countResult[0].total;
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: 'success',
+      data: {
+        posts: rows,
+        hasFollowing: true,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('获取关注用户笔记列表失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+});
+
 // 搜索笔记
 router.get('/search', optionalAuth, async (req, res) => {
   try {

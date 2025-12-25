@@ -464,3 +464,57 @@ export async function getDraftPosts(params = {}) {
     }
   }
 }
+
+// 获取关注用户的笔记列表
+export async function getFollowingPosts(params = {}) {
+  const {
+    page = 1,
+    limit = 20,
+    sort = 'time', // 'time' 或 'hot'
+    type
+  } = params
+
+  try {
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      sort
+    })
+
+    if (type) {
+      queryParams.append('type', type.toString())
+    }
+
+    const response = await fetch(`${apiConfig.baseURL}/posts/following?${queryParams.toString()}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    }).then(res => res.json())
+
+    if (response && response.code === 200 && response.data) {
+      return {
+        posts: (response.data.posts || []).map(transformPostData),
+        recommendedUsers: response.data.recommendedUsers || [],
+        hasFollowing: response.data.hasFollowing,
+        pagination: response.data.pagination,
+        hasMore: response.data.pagination.page < response.data.pagination.pages
+      }
+    }
+  } catch (error) {
+    console.error('获取关注用户笔记列表失败:', error)
+  }
+
+  // 如果API调用失败，返回空数据
+  return {
+    posts: [],
+    recommendedUsers: [],
+    hasFollowing: false,
+    pagination: {
+      page,
+      limit,
+      total: 0,
+      pages: 0
+    },
+    hasMore: false
+  }
+}

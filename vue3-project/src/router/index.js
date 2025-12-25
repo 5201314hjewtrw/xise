@@ -7,6 +7,7 @@ import user from '@/views/user/index.vue'
 import userProfile from '@/views/user/UserProfile.vue'
 import FollowList from '@/views/user/FollowList.vue'
 import ChannelPage from '@/views/explore/ChannelPage.vue'
+import FollowingPage from '@/views/explore/FollowingPage.vue'
 import PostDetail from '@/views/PostDetail.vue'
 import SearchResult from '@/views/search/SearchResult.vue'
 import PostManagementPage from '@/views/post-management/index.vue'
@@ -49,6 +50,11 @@ const router = createRouter({
               path: '',
               name: 'recommend',
               component: ChannelPage
+            },
+            {
+              path: '/explore/following',
+              name: 'following',
+              component: FollowingPage
             },
             {
               path: '/explore/:channel',
