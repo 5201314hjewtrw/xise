@@ -7,7 +7,14 @@ const router = express.Router();
 const { HTTP_STATUS, RESPONSE_CODES } = require('../constants');
 const { pool } = require('../config/config');
 const { adminAuth } = require('../utils/uploadHelper');
-const { checkFfmpegAvailable, getFfmpegConfig } = require('../utils/videoTranscode');
+const { 
+  checkFfmpegAvailable, 
+  getFfmpegConfig, 
+  getQueueStatus, 
+  getJobStatus, 
+  setMaxConcurrent,
+  getTranscodeConfig
+} = require('../utils/videoTranscode');
 
 /**
  * 获取所有系统设置
@@ -232,13 +239,17 @@ router.get('/video/status', adminAuth, async (req, res) => {
     // 获取FFmpeg配置路径
     const ffmpegConfig = getFfmpegConfig();
     
+    // 获取转码队列状态
+    const queueStatus = getQueueStatus();
+    
     res.json({
       code: RESPONSE_CODES.SUCCESS,
       message: '获取视频设置成功',
       data: {
         settings,
         ffmpegAvailable,
-        ffmpegConfig
+        ffmpegConfig,
+        queueStatus
       }
     });
   } catch (error) {
@@ -246,6 +257,103 @@ router.get('/video/status', adminAuth, async (req, res) => {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       code: RESPONSE_CODES.ERROR,
       message: '获取视频设置失败'
+    });
+  }
+});
+
+/**
+ * 获取转码队列状态
+ * GET /api/settings/video/queue
+ */
+router.get('/video/queue', adminAuth, async (req, res) => {
+  try {
+    const queueStatus = getQueueStatus();
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '获取转码队列状态成功',
+      data: queueStatus
+    });
+  } catch (error) {
+    console.error('获取转码队列状态失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '获取转码队列状态失败'
+    });
+  }
+});
+
+/**
+ * 获取单个转码任务状态
+ * GET /api/settings/video/queue/:taskId
+ */
+router.get('/video/queue/:taskId', adminAuth, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const jobStatus = getJobStatus(taskId);
+    
+    if (!jobStatus) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        code: RESPONSE_CODES.NOT_FOUND,
+        message: '任务不存在'
+      });
+    }
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '获取任务状态成功',
+      data: jobStatus
+    });
+  } catch (error) {
+    console.error('获取任务状态失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '获取任务状态失败'
+    });
+  }
+});
+
+/**
+ * 设置最大并发转码任务数
+ * PUT /api/settings/video/queue/concurrent
+ */
+router.put('/video/queue/concurrent', adminAuth, async (req, res) => {
+  try {
+    const { maxConcurrent } = req.body;
+    
+    if (typeof maxConcurrent !== 'number' || maxConcurrent < 1 || maxConcurrent > 10) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: '并发数必须是1-10之间的数字'
+      });
+    }
+    
+    setMaxConcurrent(maxConcurrent);
+    
+    // 同时更新数据库中的设置
+    await pool.execute(
+      `INSERT INTO system_settings (setting_key, setting_value, setting_group, description) 
+       VALUES (?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE setting_value = ?`,
+      [
+        'video_transcode_max_concurrent', 
+        String(maxConcurrent), 
+        'video', 
+        '最大并发转码任务数',
+        String(maxConcurrent)
+      ]
+    );
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '设置并发数成功',
+      data: { maxConcurrent }
+    });
+  } catch (error) {
+    console.error('设置并发数失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '设置并发数失败'
     });
   }
 });
