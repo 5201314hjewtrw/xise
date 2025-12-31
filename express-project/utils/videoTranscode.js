@@ -578,8 +578,8 @@ async function transcodeToDash(inputPath, outputDir, options = {}) {
   // 更新队列并发数配置
   transcodeQueue.setMaxConcurrent(transcodeConfig.maxConcurrentTasks);
   
-  if (options.useQueue !== false) {
-    // 队列模式：返回任务ID
+  if (options.useQueue === true) {
+    // 队列模式：返回任务ID（需要显式启用）
     const taskId = transcodeQueue.addJob({
       inputPath,
       outputDir,
@@ -593,7 +593,7 @@ async function transcodeToDash(inputPath, outputDir, options = {}) {
       message: '转码任务已加入队列'
     };
   } else {
-    // 同步模式：直接执行转码
+    // 同步模式：直接执行转码（默认行为）
     return await transcodeToDashInternal(inputPath, outputDir, options);
   }
 }
