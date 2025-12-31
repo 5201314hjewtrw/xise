@@ -428,6 +428,27 @@
             </div>
           </div>
 
+          <!-- 保留已播放缓冲时长 -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-label">保留已播放缓冲时长 (秒)</div>
+              <div class="setting-description">
+                视频播放过后保留在缓冲区的时长
+              </div>
+            </div>
+            <div class="setting-control">
+              <input 
+                type="number" 
+                class="input-field"
+                v-model.number="settings.player_buffer_behind"
+                min="5"
+                max="120"
+                step="5"
+                @change="handleSettingChange('player_buffer_behind', settings.player_buffer_behind)"
+              />
+            </div>
+          </div>
+
           <!-- 默认带宽估计 -->
           <div class="setting-item" :class="{ disabled: !settings.player_abr_enabled }">
             <div class="setting-info">

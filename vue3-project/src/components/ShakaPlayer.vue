@@ -171,9 +171,9 @@ const error = ref(null)
 const currentTime = ref(0)
 const duration = ref(0)
 const buffered = ref(0)
-// 使用后端配置的默认音量
-const volume = ref(playerConfig.default_volume)
-const isMuted = ref(playerConfig.muted)
+// 初始使用默认值，加载配置后会更新
+const volume = ref(0.5)
+const isMuted = ref(false)
 const isFullscreen = ref(false)
 
 // 控制栏状态
