@@ -638,10 +638,6 @@ let transcodeStatusPollTimer = null
 // 有效的视频URL（优先使用MPD，否则使用原始视频）
 const effectiveVideoUrl = computed(() => {
   if (mpdPath.value && transcodeStatus.value === 'completed') {
-    // 如果MPD路径是相对路径，添加服务器前缀
-    if (mpdPath.value.startsWith('/')) {
-      return mpdPath.value
-    }
     return mpdPath.value
   }
   return props.item.video_url
@@ -683,7 +679,7 @@ const stopTranscodeStatusPoll = () => {
 
 // Shaka Player播放事件处理
 const handleShakaPlay = () => {
-  console.log('Shaka Player 开始播放')
+  // Placeholder for future analytics or logging
 }
 
 // 移动端检测

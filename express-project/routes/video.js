@@ -3,6 +3,7 @@
  */
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const { HTTP_STATUS, RESPONSE_CODES } = require('../constants');
 const { pool } = require('../config/config');
 const { optionalAuth, authenticateToken } = require('../middleware/auth');
@@ -133,20 +134,34 @@ async function updateTranscodeStatus(postId, status, taskId = null) {
 
 // 监听转码完成事件，自动更新数据库
 transcodeQueue.on('jobCompleted', async (job) => {
-  if (job.result && job.result.success && job.result.data && job.result.data.mpdPath) {
-    // 从任务中获取postId
-    if (job.postId) {
-      const mpdRelativePath = job.result.data.mpdPath.replace(process.cwd(), '').replace(/\\/g, '/');
-      await updateVideoMpdPath(job.postId, mpdRelativePath, 'completed');
+  try {
+    if (job.result && job.result.success && job.result.data && job.result.data.mpdPath) {
+      // 从任务中获取postId
+      if (job.postId) {
+        const mpdRelativePath = path.relative(process.cwd(), job.result.data.mpdPath).replace(/\\/g, '/');
+        const success = await updateVideoMpdPath(job.postId, '/' + mpdRelativePath, 'completed');
+        if (!success) {
+          console.error(`更新MPD路径失败 - postId: ${job.postId}`);
+        }
+      }
+    } else if (job.postId) {
+      const success = await updateTranscodeStatus(job.postId, 'failed');
+      if (!success) {
+        console.error(`更新转码状态失败 - postId: ${job.postId}`);
+      }
     }
-  } else if (job.postId) {
-    await updateTranscodeStatus(job.postId, 'failed');
+  } catch (error) {
+    console.error('处理转码完成事件失败:', error);
   }
 });
 
 transcodeQueue.on('jobStarted', async (job) => {
-  if (job.postId) {
-    await updateTranscodeStatus(job.postId, 'processing', job.taskId);
+  try {
+    if (job.postId) {
+      await updateTranscodeStatus(job.postId, 'processing', job.taskId);
+    }
+  } catch (error) {
+    console.error('处理转码开始事件失败:', error);
   }
 });
 

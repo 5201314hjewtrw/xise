@@ -534,8 +534,16 @@ async function transcodeToDashInternal(inputPath, outputDir, options = {}, onPro
     const mpdPath = path.join(finalOutputDir, `${baseName}.mpd`);
     await generateDashManifest(transcodedFiles, mpdPath, videoInfo);
 
-    // 根据配置决定是否删除原文件
-    if (!transcodeConfig.retainOriginal && inputPath && fs.existsSync(inputPath)) {
+    // 清理临时输入文件（始终清理temp目录中的文件）
+    if (inputPath && fs.existsSync(inputPath) && inputPath.includes(path.join('uploads', 'temp'))) {
+      try {
+        fs.unlinkSync(inputPath);
+        console.log('已清理临时输入文件:', inputPath);
+      } catch (deleteError) {
+        console.warn('清理临时输入文件失败:', deleteError.message);
+      }
+    } else if (!transcodeConfig.retainOriginal && inputPath && fs.existsSync(inputPath)) {
+      // 根据配置决定是否删除非临时原文件
       try {
         fs.unlinkSync(inputPath);
         console.log('已删除原始文件:', inputPath);
