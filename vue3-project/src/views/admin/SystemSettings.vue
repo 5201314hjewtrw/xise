@@ -114,6 +114,71 @@
               </select>
             </div>
           </div>
+
+          <!-- 输出目录模式 -->
+          <div class="setting-item" :class="{ disabled: !settings.video_transcode_enabled }">
+            <div class="setting-info">
+              <div class="setting-label">输出目录组织方式</div>
+              <div class="setting-description">
+                选择转码后视频的存储目录结构
+              </div>
+            </div>
+            <div class="setting-control">
+              <select 
+                class="select-field"
+                v-model="settings.video_transcode_output_dir_mode"
+                :disabled="!settings.video_transcode_enabled"
+                @change="handleSettingChange('video_transcode_output_dir_mode', settings.video_transcode_output_dir_mode)"
+              >
+                <option value="datetime">按日期时间 (YYYY/MM/DD/HH)</option>
+                <option value="date">按日期 (YYYY/MM/DD)</option>
+                <option value="flat">不分目录</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 保留原文件 -->
+          <div class="setting-item" :class="{ disabled: !settings.video_transcode_enabled }">
+            <div class="setting-info">
+              <div class="setting-label">保留原始视频文件</div>
+              <div class="setting-description">
+                转码完成后是否保留原始上传的视频文件
+              </div>
+            </div>
+            <div class="setting-control">
+              <label class="switch">
+                <input 
+                  type="checkbox" 
+                  v-model="settings.video_transcode_retain_original"
+                  @change="handleSettingChange('video_transcode_retain_original', settings.video_transcode_retain_original)"
+                  :disabled="!settings.video_transcode_enabled"
+                />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 最大并发任务数 -->
+          <div class="setting-item" :class="{ disabled: !settings.video_transcode_enabled }">
+            <div class="setting-info">
+              <div class="setting-label">最大并发转码任务</div>
+              <div class="setting-description">
+                同时进行转码的最大任务数量 (1-10)
+              </div>
+            </div>
+            <div class="setting-control">
+              <input 
+                type="number" 
+                class="input-field"
+                v-model.number="settings.video_transcode_max_concurrent"
+                :disabled="!settings.video_transcode_enabled"
+                min="1"
+                max="10"
+                step="1"
+                @change="handleSettingChange('video_transcode_max_concurrent', settings.video_transcode_max_concurrent)"
+              />
+            </div>
+          </div>
         </div>
 
         <!-- 码率预览 -->
@@ -123,6 +188,44 @@
             <div class="quality-item" v-for="quality in qualityLevels" :key="quality.label">
               <span class="quality-label">{{ quality.label }}</span>
               <span class="quality-bitrate">{{ quality.bitrate }} kbps</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 转码队列状态 -->
+        <div class="queue-status" v-if="settings.video_transcode_enabled && queueStatus">
+          <div class="queue-header">
+            <div class="preview-title">转码队列状态</div>
+            <button class="refresh-btn" @click="refreshQueueStatus" :disabled="refreshingQueue">
+              <SvgIcon name="refresh" class="refresh-icon" :class="{ spinning: refreshingQueue }" />
+            </button>
+          </div>
+          <div class="queue-stats">
+            <div class="queue-stat">
+              <span class="stat-value">{{ queueStatus.pending }}</span>
+              <span class="stat-label">等待中</span>
+            </div>
+            <div class="queue-stat active">
+              <span class="stat-value">{{ queueStatus.active }}</span>
+              <span class="stat-label">进行中</span>
+            </div>
+            <div class="queue-stat completed">
+              <span class="stat-value">{{ queueStatus.completed }}</span>
+              <span class="stat-label">已完成</span>
+            </div>
+          </div>
+          
+          <!-- 活动任务列表 -->
+          <div class="active-jobs" v-if="queueStatus.jobs?.active?.length > 0">
+            <div class="jobs-title">正在转码</div>
+            <div class="job-item" v-for="job in queueStatus.jobs.active" :key="job.taskId">
+              <span class="job-name">{{ job.fileName }}</span>
+              <div class="job-progress">
+                <div class="progress-bar">
+                  <div class="progress-fill" :style="{ width: job.progress + '%' }"></div>
+                </div>
+                <span class="progress-text">{{ job.progress }}%</span>
+              </div>
             </div>
           </div>
         </div>
@@ -142,7 +245,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import SvgIcon from '@/components/SvgIcon.vue'
 import MessageToast from '@/components/MessageToast.vue'
 import { settingsApi } from '@/api/settings.js'
@@ -152,17 +255,23 @@ const settings = reactive({
   video_transcode_enabled: false,
   video_transcode_min_bitrate: 500,
   video_transcode_max_bitrate: 2500,
-  video_transcode_format: 'dash'
+  video_transcode_format: 'dash',
+  video_transcode_output_dir_mode: 'datetime',
+  video_transcode_retain_original: true,
+  video_transcode_max_concurrent: 2
 })
 
 const originalSettings = ref({})
 const ffmpegAvailable = ref(false)
 const ffmpegConfig = ref({ ffmpegPath: '', ffprobePath: '' })
+const queueStatus = ref(null)
 const loading = ref(true)
 const saving = ref(false)
+const refreshingQueue = ref(false)
 const showToast = ref(false)
 const toastMessage = ref('')
 const toastType = ref('success')
+let queueRefreshInterval = null
 
 // 计算是否有未保存的更改
 const hasChanges = computed(() => {
@@ -192,7 +301,50 @@ const qualityLevels = computed(() => {
 // 初始化加载设置
 onMounted(async () => {
   await loadSettings()
+  // 启动队列状态定时刷新
+  startQueueRefresh()
 })
+
+onUnmounted(() => {
+  // 清理定时器
+  if (queueRefreshInterval) {
+    clearInterval(queueRefreshInterval)
+  }
+})
+
+// 启动队列状态定时刷新
+function startQueueRefresh() {
+  if (queueRefreshInterval) {
+    clearInterval(queueRefreshInterval)
+  }
+  // 每5秒刷新一次队列状态
+  queueRefreshInterval = setInterval(() => {
+    if (settings.video_transcode_enabled) {
+      refreshQueueStatus(true) // 静默刷新
+    }
+  }, 5000)
+}
+
+// 刷新队列状态
+async function refreshQueueStatus(silent = false) {
+  if (!silent) {
+    refreshingQueue.value = true
+  }
+  try {
+    const result = await settingsApi.getVideoStatus()
+    if (result.success && result.data.queueStatus) {
+      queueStatus.value = result.data.queueStatus
+    }
+  } catch (error) {
+    if (!silent) {
+      console.error('刷新队列状态失败:', error)
+    }
+  } finally {
+    if (!silent) {
+      refreshingQueue.value = false
+    }
+  }
+}
 
 // 加载设置
 async function loadSettings() {
@@ -207,9 +359,13 @@ async function loadSettings() {
       settings.video_transcode_min_bitrate = parseInt(videoSettings.video_transcode_min_bitrate) || 500
       settings.video_transcode_max_bitrate = parseInt(videoSettings.video_transcode_max_bitrate) || 2500
       settings.video_transcode_format = videoSettings.video_transcode_format || 'dash'
+      settings.video_transcode_output_dir_mode = videoSettings.video_transcode_output_dir_mode || 'datetime'
+      settings.video_transcode_retain_original = videoSettings.video_transcode_retain_original !== 'false'
+      settings.video_transcode_max_concurrent = parseInt(videoSettings.video_transcode_max_concurrent) || 2
       
       ffmpegAvailable.value = result.data.ffmpegAvailable || false
       ffmpegConfig.value = result.data.ffmpegConfig || { ffmpegPath: '', ffprobePath: '' }
+      queueStatus.value = result.data.queueStatus || null
       
       // 保存原始设置
       originalSettings.value = { ...settings }
@@ -240,6 +396,14 @@ function handleSettingChange(key, value) {
       showMessage('最大码率必须大于最小码率', 'warning')
     }
   }
+  
+  if (key === 'video_transcode_max_concurrent') {
+    if (value < 1) {
+      settings.video_transcode_max_concurrent = 1
+    } else if (value > 10) {
+      settings.video_transcode_max_concurrent = 10
+    }
+  }
 }
 
 // 保存所有设置
@@ -251,7 +415,10 @@ async function saveAllSettings() {
       video_transcode_enabled: String(settings.video_transcode_enabled),
       video_transcode_min_bitrate: String(settings.video_transcode_min_bitrate),
       video_transcode_max_bitrate: String(settings.video_transcode_max_bitrate),
-      video_transcode_format: settings.video_transcode_format
+      video_transcode_format: settings.video_transcode_format,
+      video_transcode_output_dir_mode: settings.video_transcode_output_dir_mode,
+      video_transcode_retain_original: String(settings.video_transcode_retain_original),
+      video_transcode_max_concurrent: String(settings.video_transcode_max_concurrent)
     }
     
     const result = await settingsApi.updateSettings(settingsToSave)
@@ -633,5 +800,155 @@ input:disabled + .slider {
   .quality-levels {
     justify-content: center;
   }
+
+  .select-field {
+    width: 100%;
+  }
+}
+
+/* 转码队列状态样式 */
+.queue-status {
+  padding: 16px 24px 24px;
+  background: var(--bg-color-secondary);
+  border-top: 1px solid var(--border-color-primary);
+}
+
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.refresh-btn {
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--bg-color-primary);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-color-secondary);
+}
+
+.refresh-icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+.queue-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.queue-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--bg-color-primary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color-primary);
+  min-width: 80px;
+}
+
+.queue-stat.active {
+  border-color: var(--primary-color);
+  background: rgba(var(--primary-color-rgb), 0.1);
+}
+
+.queue-stat.completed {
+  border-color: var(--success-color);
+  background: rgba(var(--success-color-rgb), 0.1);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-color-primary);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  margin-top: 4px;
+}
+
+.active-jobs {
+  margin-top: 16px;
+}
+
+.jobs-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-color-secondary);
+  margin-bottom: 12px;
+}
+
+.job-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-color-primary);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.job-item:last-child {
+  margin-bottom: 0;
+}
+
+.job-name {
+  font-size: 13px;
+  color: var(--text-color-primary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.job-progress .progress-bar {
+  width: 100px;
+  height: 6px;
+  background: var(--border-color-primary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.job-progress .progress-fill {
+  height: 100%;
+  background: var(--primary-color);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  min-width: 40px;
+  text-align: right;
 }
 </style>
