@@ -154,6 +154,14 @@ const config = {
     exchangeRateIn: parseFloat(process.env.BALANCE_EXCHANGE_RATE_IN) || 1.0,
     // 兑出比例：1用户中心余额 = exchangeRateOut 本站积分
     exchangeRateOut: parseFloat(process.env.BALANCE_EXCHANGE_RATE_OUT) || 1.0
+  },
+
+  // FFmpeg 配置
+  ffmpeg: {
+    // FFmpeg 二进制文件路径（留空则使用系统PATH中的ffmpeg）
+    ffmpegPath: process.env.FFMPEG_PATH || '',
+    // FFprobe 二进制文件路径（留空则使用系统PATH中的ffprobe）
+    ffprobePath: process.env.FFPROBE_PATH || ''
   }
 };
 

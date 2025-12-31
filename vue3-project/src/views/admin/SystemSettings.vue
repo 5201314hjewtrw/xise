@@ -14,6 +14,21 @@
           </div>
         </div>
 
+        <!-- FFmpeg 路径信息 -->
+        <div class="ffmpeg-path-info">
+          <div class="path-item">
+            <span class="path-label">FFmpeg 路径:</span>
+            <span class="path-value">{{ ffmpegConfig.ffmpegPath || '(系统 PATH)' }}</span>
+          </div>
+          <div class="path-item">
+            <span class="path-label">FFprobe 路径:</span>
+            <span class="path-value">{{ ffmpegConfig.ffprobePath || '(系统 PATH)' }}</span>
+          </div>
+          <div class="path-hint">
+            提示: 可在 .env 文件中配置 FFMPEG_PATH 和 FFPROBE_PATH 指定二进制文件路径
+          </div>
+        </div>
+
         <div class="card-body">
           <!-- 转码开关 -->
           <div class="setting-item">
@@ -142,6 +157,7 @@ const settings = reactive({
 
 const originalSettings = ref({})
 const ffmpegAvailable = ref(false)
+const ffmpegConfig = ref({ ffmpegPath: '', ffprobePath: '' })
 const loading = ref(true)
 const saving = ref(false)
 const showToast = ref(false)
@@ -193,6 +209,7 @@ async function loadSettings() {
       settings.video_transcode_format = videoSettings.video_transcode_format || 'dash'
       
       ffmpegAvailable.value = result.data.ffmpegAvailable || false
+      ffmpegConfig.value = result.data.ffmpegConfig || { ffmpegPath: '', ffprobePath: '' }
       
       // 保存原始设置
       originalSettings.value = { ...settings }
@@ -319,6 +336,49 @@ function showMessage(message, type = 'success') {
 .ffmpeg-status.available {
   background: var(--success-bg);
   color: var(--success-color);
+}
+
+/* FFmpeg 路径信息 */
+.ffmpeg-path-info {
+  padding: 16px 24px;
+  background: var(--bg-color-secondary);
+  border-bottom: 1px solid var(--border-color-primary);
+}
+
+.path-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.path-item:last-of-type {
+  margin-bottom: 0;
+}
+
+.path-label {
+  color: var(--text-color-secondary);
+  min-width: 100px;
+}
+
+.path-value {
+  color: var(--text-color-primary);
+  font-family: monospace;
+  background: var(--bg-color-primary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.path-hint {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-color-primary);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-color-tertiary);
+  border-left: 3px solid var(--primary-color);
 }
 
 .status-icon {

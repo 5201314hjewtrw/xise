@@ -1,13 +1,47 @@
 /**
  * 视频转码工具 - 使用 FFmpeg 进行 DASH 编码
  * 支持动态码率配置
+ * 支持从 .env 配置 FFmpeg 二进制文件路径
  */
 
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { pool } = require('../config/config');
+const config = require('../config/config');
+const { pool } = config;
+
+/**
+ * 初始化 FFmpeg 路径配置
+ * 从 .env 配置读取 FFmpeg 和 FFprobe 二进制文件路径
+ */
+function initFfmpegPath() {
+  const ffmpegPath = config.ffmpeg?.ffmpegPath;
+  const ffprobePath = config.ffmpeg?.ffprobePath;
+  
+  // 设置 FFmpeg 路径
+  if (ffmpegPath && ffmpegPath.trim() !== '') {
+    if (fs.existsSync(ffmpegPath)) {
+      ffmpeg.setFfmpegPath(ffmpegPath);
+      console.log(`FFmpeg 路径已设置: ${ffmpegPath}`);
+    } else {
+      console.warn(`FFmpeg 路径不存在: ${ffmpegPath}，将尝试使用系统 PATH`);
+    }
+  }
+  
+  // 设置 FFprobe 路径
+  if (ffprobePath && ffprobePath.trim() !== '') {
+    if (fs.existsSync(ffprobePath)) {
+      ffmpeg.setFfprobePath(ffprobePath);
+      console.log(`FFprobe 路径已设置: ${ffprobePath}`);
+    } else {
+      console.warn(`FFprobe 路径不存在: ${ffprobePath}，将尝试使用系统 PATH`);
+    }
+  }
+}
+
+// 初始化 FFmpeg 路径
+initFfmpegPath();
 
 /**
  * 获取系统设置
@@ -45,6 +79,17 @@ async function getTranscodeConfig() {
     minBitrate: parseInt(minBitrate, 10) || 500,
     maxBitrate: parseInt(maxBitrate, 10) || 2500,
     format: format || 'dash'
+  };
+}
+
+/**
+ * 获取当前 FFmpeg 配置信息
+ * @returns {Object} FFmpeg 配置信息
+ */
+function getFfmpegConfig() {
+  return {
+    ffmpegPath: config.ffmpeg?.ffmpegPath || '(系统 PATH)',
+    ffprobePath: config.ffmpeg?.ffprobePath || '(系统 PATH)'
   };
 }
 
@@ -329,6 +374,7 @@ function cleanupTranscodedFiles(outputDir, baseName) {
 module.exports = {
   getSetting,
   getTranscodeConfig,
+  getFfmpegConfig,
   checkFfmpegAvailable,
   getVideoInfo,
   transcodeToDash,

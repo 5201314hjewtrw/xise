@@ -7,7 +7,7 @@ const router = express.Router();
 const { HTTP_STATUS, RESPONSE_CODES } = require('../constants');
 const { pool } = require('../config/config');
 const { adminAuth } = require('../utils/uploadHelper');
-const { checkFfmpegAvailable } = require('../utils/videoTranscode');
+const { checkFfmpegAvailable, getFfmpegConfig } = require('../utils/videoTranscode');
 
 /**
  * 获取所有系统设置
@@ -229,12 +229,16 @@ router.get('/video/status', adminAuth, async (req, res) => {
     // 检查FFmpeg是否可用
     const ffmpegAvailable = await checkFfmpegAvailable();
     
+    // 获取FFmpeg配置路径
+    const ffmpegConfig = getFfmpegConfig();
+    
     res.json({
       code: RESPONSE_CODES.SUCCESS,
       message: '获取视频设置成功',
       data: {
         settings,
-        ffmpegAvailable
+        ffmpegAvailable,
+        ffmpegConfig
       }
     });
   } catch (error) {
