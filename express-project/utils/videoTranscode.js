@@ -487,12 +487,12 @@ async function transcodeToDashInternal(inputPath, outputDir, options = {}, onPro
               '-profile:v main',
               '-level 3.1',
               // 使用frag_keyframe和empty_moov生成DASH兼容的分片MP4
-              '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+              '-movflags frag_keyframe+empty_moov+default_base_moof',
               // 设置关键帧间隔为2秒（假设30fps）
-              '-g', '60',
-              '-keyint_min', '60',
+              '-g 60',
+              '-keyint_min 60',
               // 场景变化检测
-              '-sc_threshold', '0'
+              '-sc_threshold 0'
             ])
             .on('start', (cmd) => {
               console.log(`开始转码 ${quality.label}: ${cmd}`);
@@ -637,8 +637,15 @@ async function generateDashManifest(files, mpdPath, videoInfo) {
   const duration = videoInfo.duration || 0;
   const durationStr = formatDuration(duration);
   
+  // 过滤有效的文件（确保没有空的表示）
+  const validFiles = files.filter(f => f && f.path && f.bitrate);
+  
+  if (validFiles.length === 0) {
+    throw new Error('没有有效的视频文件用于生成MPD');
+  }
+  
   // 按分辨率排序（从高到低）
-  const sortedFiles = [...files].sort((a, b) => (b.height || 0) - (a.height || 0));
+  const sortedFiles = [...validFiles].sort((a, b) => (b.height || 0) - (a.height || 0));
   
   // 生成视频表示
   let videoRepresentations = '';
@@ -653,7 +660,7 @@ async function generateDashManifest(files, mpdPath, videoInfo) {
         </Representation>`;
   });
 
-  // 生成MPD - 使用isoff-live profile更兼容分片MP4
+  // 生成MPD - 使用isoff-on-demand profile用于VOD内容
   const mpd = `<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" 
      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -661,7 +668,7 @@ async function generateDashManifest(files, mpdPath, videoInfo) {
      type="static" 
      mediaPresentationDuration="${durationStr}" 
      minBufferTime="PT1.5S" 
-     profiles="urn:mpeg:dash:profile:isoff-live:2011">
+     profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">
   <Period id="0" duration="${durationStr}">
     <AdaptationSet id="0" mimeType="video/mp4" contentType="video" segmentAlignment="true" bitstreamSwitching="true" startWithSAP="1">
       ${videoRepresentations}
