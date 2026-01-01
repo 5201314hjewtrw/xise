@@ -4,10 +4,8 @@ const { HTTP_STATUS, RESPONSE_CODES } = require('../constants');
 const multer = require('multer');
 const { authenticateToken } = require('../middleware/auth');
 const { uploadFile, uploadVideo } = require('../utils/uploadHelper');
-const { getTranscodeConfig, transcodeToDash, checkFfmpegAvailable, transcodeQueue } = require('../utils/videoTranscode');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+const { convertToDash } = require('../utils/videoTranscoder');
+const config = require('../config/config');
 const { pool } = require('../config/config');
 
 // 配置 multer 内存存储（用于云端图床）
@@ -25,8 +23,8 @@ const imageFileFilter = (req, file, cb) => {
 
 // 文件过滤器 - 视频
 const videoFileFilter = (req, file, cb) => {
-  // 检查文件类型（包含 video/quicktime 和 video/3gpp 以支持移动端设备录制的视频）
-  const allowedTypes = ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/webm', 'video/quicktime', 'video/3gpp'];
+  // 检查文件类型
+  const allowedTypes = ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/webm'];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -194,7 +192,7 @@ router.post('/video', authenticateToken, videoUpload.fields([
       console.log(`包含前端生成的缩略图: ${thumbnailFile.originalname}`);
     }
 
-    // 先上传原始视频文件（不阻塞用户）
+    // 上传视频文件
     const uploadResult = await uploadVideo(
       videoFile.buffer,
       videoFile.originalname,
@@ -231,67 +229,65 @@ router.post('/video', authenticateToken, videoUpload.fields([
       }
     }
 
-    // 构建响应数据
-    const responseData = {
-      originalname: videoFile.originalname,
-      size: videoFile.size,
-      url: uploadResult.url,
-      filePath: uploadResult.filePath,
-      coverUrl: coverUrl,
-      transcode: {
-        status: 'none',
-        taskId: null
-      }
-    };
-
-    // 检查是否需要转码（异步处理，不阻塞响应）
-    const transcodeConfig = await getTranscodeConfig();
-    
-    if (transcodeConfig.enabled) {
-      console.log('视频转码已启用，将在后台异步处理...');
-      
-      // 检查FFmpeg是否可用
-      const ffmpegAvailable = await checkFfmpegAvailable();
-      
-      if (ffmpegAvailable) {
-        // 将视频buffer写入临时文件
-        const tempDir = path.join(process.cwd(), 'uploads', 'temp');
-        if (!fs.existsSync(tempDir)) {
-          fs.mkdirSync(tempDir, { recursive: true });
-        }
+    // 如果启用了视频转码，且是本地存储策略，则启动DASH转码
+    let dashManifestUrl = null;
+    if (config.videoTranscoding.enabled && 
+        config.upload.video.strategy === 'local' && 
+        uploadResult.filePath) {
+      try {
+        console.log('🎬 启动视频DASH转码...');
+        const originalVideoUrl = uploadResult.url;
         
-        const tempInputPath = path.join(tempDir, `input_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${path.extname(videoFile.originalname)}`);
-        fs.writeFileSync(tempInputPath, videoFile.buffer);
-        
-        // 转码输出目录
-        const outputDir = path.join(process.cwd(), 'uploads', 'videos', 'dash');
-        
-        // 使用队列模式异步转码
-        const transcodeResult = await transcodeToDash(tempInputPath, outputDir, {
-          minBitrate: transcodeConfig.minBitrate,
-          maxBitrate: transcodeConfig.maxBitrate,
-          useQueue: true  // 使用队列模式，立即返回任务ID
+        // 异步转码，不阻塞响应
+        convertToDash(uploadResult.filePath, req.user.id, (progress) => {
+          console.log(`转码进度: ${progress}%`);
+        }).then(async (transcodeResult) => {
+          if (transcodeResult.success) {
+            console.log('✅ DASH转码完成:', transcodeResult.manifestUrl);
+            
+            // 直接更新数据库中的video_url为DASH manifest URL
+            try {
+              const [updateResult] = await pool.query(
+                'UPDATE post_videos SET video_url = ? WHERE video_url = ?',
+                [transcodeResult.manifestUrl, originalVideoUrl]
+              );
+              
+              if (updateResult.affectedRows > 0) {
+                console.log(`✅ 已更新 ${updateResult.affectedRows} 条视频记录，替换为DASH URL`);
+              } else {
+                console.log('⚠️ 未找到需要更新的视频记录（视频可能还未关联到帖子）');
+              }
+            } catch (dbError) {
+              console.error('❌ 更新数据库视频URL失败:', dbError.message);
+            }
+          } else {
+            console.error('❌ DASH转码失败:', transcodeResult.message);
+          }
+        }).catch((err) => {
+          console.error('❌ DASH转码异常:', err);
         });
         
-        if (transcodeResult.queued && transcodeResult.taskId) {
-          responseData.transcode = {
-            status: 'pending',
-            taskId: transcodeResult.taskId
-          };
-          console.log(`视频转码任务已加入队列 - 任务ID: ${transcodeResult.taskId}`);
-        }
-      } else {
-        console.warn('FFmpeg不可用，跳过视频转码');
+        console.log('⏳ DASH转码已在后台启动');
+      } catch (error) {
+        console.error('❌ 启动DASH转码失败:', error.message);
+        // 转码失败不影响视频上传
       }
     }
 
     // 记录用户上传操作日志
-    console.log(`视频上传成功 - 用户ID: ${req.user.id}, 文件名: ${videoFile.originalname}, 缩略图: ${coverUrl ? '有' : '无'}, 转码: ${responseData.transcode.status}`);
+    console.log(`视频上传成功 - 用户ID: ${req.user.id}, 文件名: ${videoFile.originalname}, 缩略图: ${coverUrl ? '有' : '无'}`);
 
     res.json({
       code: RESPONSE_CODES.SUCCESS,
       message: '上传成功',
-      data: responseData
+      data: {
+        originalname: videoFile.originalname,
+        size: videoFile.size,
+        url: uploadResult.url,
+        filePath: uploadResult.filePath,
+        coverUrl: coverUrl,
+        transcoding: config.videoTranscoding.enabled && config.upload.video.strategy === 'local'
+      }
     });
   } catch (error) {
     console.error('视频上传失败:', error);

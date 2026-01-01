@@ -56,11 +56,9 @@ router.get('/', optionalAuth, async (req, res) => {
         // 根据笔记类型获取图片或视频封面
         if (post.type === 2) {
           // 视频笔记：获取视频封面
-          const [videos] = await pool.execute('SELECT video_url, cover_url, mpd_path, transcode_status FROM post_videos WHERE post_id = ?', [post.id]);
+          const [videos] = await pool.execute('SELECT video_url, cover_url FROM post_videos WHERE post_id = ?', [post.id]);
           post.images = videos.length > 0 && videos[0].cover_url ? [videos[0].cover_url] : [];
           post.video_url = videos.length > 0 ? videos[0].video_url : null;
-          post.mpd_path = videos.length > 0 ? videos[0].mpd_path : null;
-          post.transcode_status = videos.length > 0 ? videos[0].transcode_status : null;
           // 为瀑布流设置image字段
           post.image = videos.length > 0 && videos[0].cover_url ? videos[0].cover_url : null;
         } else {
@@ -203,11 +201,9 @@ router.get('/', optionalAuth, async (req, res) => {
       // 根据笔记类型获取图片或视频封面
       if (post.type === 2) {
         // 视频笔记：获取视频封面
-        const [videos] = await pool.execute('SELECT video_url, cover_url, mpd_path, transcode_status FROM post_videos WHERE post_id = ?', [post.id]);
+        const [videos] = await pool.execute('SELECT video_url, cover_url FROM post_videos WHERE post_id = ?', [post.id]);
         post.images = videos.length > 0 && videos[0].cover_url ? [videos[0].cover_url] : [];
         post.video_url = videos.length > 0 ? videos[0].video_url : null;
-        post.mpd_path = videos.length > 0 ? videos[0].mpd_path : null;
-        post.transcode_status = videos.length > 0 ? videos[0].transcode_status : null;
         // 为瀑布流设置image字段
         post.image = videos.length > 0 && videos[0].cover_url ? videos[0].cover_url : null;
       } else {
@@ -536,15 +532,12 @@ router.get('/:id', optionalAuth, async (req, res) => {
       post.images = images.map(img => img.image_url);
     } else if (post.type === 2) {
       // 视频类型：获取视频
-      const [videos] = await pool.execute('SELECT video_url, cover_url, mpd_path, transcode_status, transcode_task_id FROM post_videos WHERE post_id = ?', [postId]);
+      const [videos] = await pool.execute('SELECT video_url, cover_url FROM post_videos WHERE post_id = ?', [postId]);
       post.videos = videos;
       // 将第一个视频的URL和封面提取到主对象中，方便前端使用
       if (videos.length > 0) {
         post.video_url = videos[0].video_url;
         post.cover_url = videos[0].cover_url;
-        post.mpd_path = videos[0].mpd_path;
-        post.transcode_status = videos[0].transcode_status;
-        post.transcode_task_id = videos[0].transcode_task_id;
       }
     }
 
@@ -662,7 +655,6 @@ router.post('/', authenticateToken, async (req, res) => {
       console.log('🎥 开始处理视频数据...');
       console.log('视频URL:', video.url);
       console.log('封面URL:', video.coverUrl);
-      console.log('转码状态:', video.transcode);
 
       let coverUrl = video.coverUrl || null;
       let duration = null;
@@ -683,29 +675,13 @@ router.post('/', authenticateToken, async (req, res) => {
         }
       }
 
-      // 获取转码状态和任务ID
-      const transcodeStatus = video.transcode?.status || 'none';
-      const transcodeTaskId = video.transcode?.taskId || null;
-
-      // 插入视频记录（包含转码信息）
+      // 插入视频记录
       console.log('💾 插入视频记录到数据库...');
       await pool.execute(
-        'INSERT INTO post_videos (post_id, video_url, cover_url, transcode_status, transcode_task_id) VALUES (?, ?, ?, ?, ?)',
-        [postId.toString(), video.url, coverUrl, transcodeStatus, transcodeTaskId]
+        'INSERT INTO post_videos (post_id, video_url, cover_url) VALUES (?, ?, ?)',
+        [postId.toString(), video.url, coverUrl]
       );
-      console.log('✅ 视频记录插入成功，转码状态:', transcodeStatus, '任务ID:', transcodeTaskId);
-
-      // 如果有转码任务ID，关联postId到转码队列
-      if (transcodeTaskId) {
-        const { transcodeQueue } = require('../utils/videoTranscode');
-        // 使用专门的方法设置postId，确保关联正确持久化
-        const success = transcodeQueue.setJobPostId(transcodeTaskId, postId);
-        if (success) {
-          console.log(`✅ 已关联postId ${postId} 到转码任务 ${transcodeTaskId}`);
-        } else {
-          console.warn(`⚠️ 无法关联postId到转码任务，任务可能已完成: ${transcodeTaskId}`);
-        }
-      }
+      console.log('✅ 视频记录插入成功');
     }
 
     // 处理标签

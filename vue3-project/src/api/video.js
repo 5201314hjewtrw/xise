@@ -58,59 +58,6 @@ export const videoApi = {
   },
 
   /**
-   * 获取视频转码状态
-   * @param {string|number} postId - 帖子ID
-   * @returns {Promise} 转码状态
-   */
-  async getTranscodeStatus(postId) {
-    try {
-      const response = await request.get(`/video/transcode-status/${postId}`)
-      if (response.success) {
-        return {
-          success: true,
-          data: response.data
-        }
-      }
-      return {
-        success: false,
-        message: response.message || '获取转码状态失败'
-      }
-    } catch (error) {
-      console.error('获取转码状态失败:', error)
-      return {
-        success: false,
-        message: error.message || '获取转码状态失败'
-      }
-    }
-  },
-
-  /**
-   * 获取转码队列状态
-   * @returns {Promise} 队列状态
-   */
-  async getTranscodeQueue() {
-    try {
-      const response = await request.get('/video/transcode-queue')
-      if (response.success) {
-        return {
-          success: true,
-          data: response.data
-        }
-      }
-      return {
-        success: false,
-        message: response.message || '获取转码队列状态失败'
-      }
-    } catch (error) {
-      console.error('获取转码队列状态失败:', error)
-      return {
-        success: false,
-        message: error.message || '获取转码队列状态失败'
-      }
-    }
-  },
-
-  /**
    * 验证视频文件
    * @param {File} file - 视频文件
    * @returns {Object} 验证结果
@@ -123,9 +70,7 @@ export const videoApi = {
       'video/mov', 
       'video/wmv', 
       'video/flv', 
-      'video/webm',
-      'video/quicktime',
-      'video/3gpp'
+      'video/webm'
     ]
 
     // 检查文件类型

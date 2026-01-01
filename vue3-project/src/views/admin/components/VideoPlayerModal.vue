@@ -8,27 +8,15 @@
         </button>
       </div>
       <div class="video-modal-body">
-        <!-- 使用Shaka Player播放DASH/HLS流 -->
-        <ShakaPlayer
-          v-if="videoUrl && isDashOrHls"
-          ref="shakaPlayerRef"
+        <ShakaVideoPlayer
+          v-if="videoUrl"
           :src="videoUrl"
-          :poster="posterUrl"
-          :autoplay="false"
-          class="modal-video-player-container"
-        />
-        <!-- 普通视频播放 -->
-        <video
-          v-else-if="videoUrl"
-          ref="videoPlayer"
-          :src="videoUrl"
-          :poster="posterUrl"
-          controls
-          preload="metadata"
+          :poster-url="posterUrl"
+          :autoplay="true"
+          :show-controls="true"
+          :show-play-button="true"
           class="modal-video-player"
-        >
-          您的浏览器不支持视频播放
-        </video>
+        />
         <div v-else class="video-placeholder">
           <SvgIcon name="video" width="48" height="48" />
           <p>视频加载中...</p>
@@ -39,9 +27,9 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, computed } from 'vue'
+import { watch } from 'vue'
 import SvgIcon from '@/components/SvgIcon.vue'
-import ShakaPlayer from '@/components/ShakaPlayer.vue'
+import ShakaVideoPlayer from '@/components/ShakaVideoPlayer.vue'
 
 const props = defineProps({
   visible: {
@@ -60,36 +48,10 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'close'])
 
-const videoPlayer = ref(null)
-const shakaPlayerRef = ref(null)
-
-// 检测是否为DASH或HLS流
-const isDashOrHls = computed(() => {
-  if (!props.videoUrl) return false
-  const url = props.videoUrl.toLowerCase()
-  return url.endsWith('.mpd') || url.endsWith('.m3u8') || url.includes('manifest')
-})
-
 const closeModal = () => {
   emit('update:visible', false)
   emit('close')
 }
-
-// 监听visible变化，处理视频播放
-watch(() => props.visible, async (newVisible) => {
-  if (newVisible) {
-    await nextTick()
-    // 模态框打开时，可以在这里添加自动播放逻辑
-  } else {
-    // 模态框关闭时，暂停视频
-    if (videoPlayer.value) {
-      videoPlayer.value.pause()
-    }
-    if (shakaPlayerRef.value) {
-      shakaPlayerRef.value.pause()
-    }
-  }
-})
 
 // ESC键关闭模态框
 const handleKeydown = (event) => {
@@ -185,17 +147,10 @@ watch(() => props.visible, (newVisible) => {
 .modal-video-player {
   width: 100%;
   max-width: 100%;
+  height: 60vh;
   max-height: 60vh;
   border-radius: 8px;
   background: #000;
-}
-
-.modal-video-player-container {
-  width: 100%;
-  max-width: 100%;
-  max-height: 60vh;
-  border-radius: 8px;
-  overflow: hidden;
 }
 
 .video-placeholder {
@@ -233,6 +188,7 @@ watch(() => props.visible, (newVisible) => {
   }
   
   .modal-video-player {
+    height: 50vh;
     max-height: 50vh;
   }
 }

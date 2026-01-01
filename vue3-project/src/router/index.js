@@ -32,7 +32,6 @@ import NotificationManagement from '@/views/admin/NotificationManagement.vue'
 import SessionManagement from '@/views/admin/SessionManagement.vue'
 import AdminManagement from '@/views/admin/AdminManagement.vue'
 import AuditManagement from '@/views/admin/AuditManagement.vue'
-import SystemSettings from '@/views/admin/SystemSettings.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -256,11 +255,6 @@ const router = createRouter({
           path: 'audit',
           name: 'admin_audit',
           component: AuditManagement
-        },
-        {
-          path: 'settings',
-          name: 'admin_settings',
-          component: SystemSettings
         }
       ]
     }

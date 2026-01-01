@@ -69,7 +69,7 @@ const config = {
     // 视频上传配置
     video: {
       maxSize: process.env.VIDEO_MAX_SIZE || '100mb',
-      allowedTypes: ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/webm', 'video/quicktime', 'video/3gpp'],
+      allowedTypes: ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/flv', 'video/webm'],
       // 视频上传策略配置（只支持本地和R2，不支持第三方图床）
       strategy: process.env.VIDEO_UPLOAD_STRATEGY || 'local', // 'local' 或 'r2'
       // 本地存储配置
@@ -88,6 +88,43 @@ const config = {
         region: process.env.R2_REGION || 'auto'
       }
     }
+  },
+
+  // 视频转码配置
+  videoTranscoding: {
+    // 是否启用视频转码
+    enabled: process.env.VIDEO_TRANSCODING_ENABLED === 'true',
+    // FFmpeg可执行文件路径
+    ffmpegPath: process.env.FFMPEG_PATH || '/app/bin/ffmpeg',
+    ffprobePath: process.env.FFPROBE_PATH || '/app/bin/ffprobe',
+    // 转码最大线程数 (避免资源占用过多)
+    maxThreads: (() => {
+      const threads = Number.parseInt(process.env.VIDEO_TRANSCODING_MAX_THREADS, 10);
+      return (threads > 0) ? threads : 4;
+    })(),
+    // DASH转码输出目录格式
+    outputFormat: process.env.VIDEO_DASH_OUTPUT_FORMAT || '{date}/{userId}/{timestamp}',
+    // DASH配置
+    dash: {
+      // 分片时长（秒）
+      segmentDuration: parseInt(process.env.DASH_SEGMENT_DURATION) || 4,
+      // 最小码率 (kbps)
+      minBitrate: parseInt(process.env.DASH_MIN_BITRATE) || 500,
+      // 最大码率 (kbps)
+      maxBitrate: parseInt(process.env.DASH_MAX_BITRATE) || 5000,
+      // 原始视频最大码率 (kbps) - 对原始视频进行压缩时使用
+      originalMaxBitrate: parseInt(process.env.ORIGINAL_VIDEO_MAX_BITRATE) || 8000,
+      // 支持的分辨率配置（解析环境变量）
+      resolutions: (process.env.DASH_RESOLUTIONS || '1920x1080:5000,1280x720:2500,854x480:1000,640x360:750')
+        .split(',')
+        .map(r => {
+          const [resolution, bitrate] = r.trim().split(':');
+          const [width, height] = resolution.split('x').map(n => parseInt(n));
+          return { width, height, bitrate: parseInt(bitrate) };
+        })
+    },
+    // 是否删除原始视频文件
+    deleteOriginal: process.env.DELETE_ORIGINAL_VIDEO === 'true'
   },
 
   // API配置
@@ -154,16 +191,6 @@ const config = {
     exchangeRateIn: parseFloat(process.env.BALANCE_EXCHANGE_RATE_IN) || 1.0,
     // 兑出比例：1用户中心余额 = exchangeRateOut 本站积分
     exchangeRateOut: parseFloat(process.env.BALANCE_EXCHANGE_RATE_OUT) || 1.0
-  },
-
-  // FFmpeg 配置
-  ffmpeg: {
-    // FFmpeg 二进制文件路径（留空则使用系统PATH中的ffmpeg）
-    ffmpegPath: process.env.FFMPEG_PATH || '',
-    // FFprobe 二进制文件路径（留空则使用系统PATH中的ffprobe）
-    ffprobePath: process.env.FFPROBE_PATH || '',
-    // DASH分辨率配置（格式: 宽x高:码率kbps 或 高度p:码率kbps，逗号分隔）
-    dashResolutions: process.env.DASH_RESOLUTIONS || '1920x1080:5000,1280x720:2500,854x480:1000,640x360:500'
   }
 };
 

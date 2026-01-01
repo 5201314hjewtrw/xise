@@ -24,49 +24,21 @@
           @mouseleave="showImageControls = false">
           <!-- 视频播放器（桌面端） -->
           <div v-if="props.item.type === 2" class="video-container">
-            <!-- 使用Shaka Player播放DASH流（当MPD可用时） -->
-            <ShakaPlayer
-              v-if="effectiveVideoUrl && effectiveVideoUrl.endsWith('.mpd')"
-              ref="shakaPlayerRef"
-              :src="effectiveVideoUrl"
-              :poster="props.item.cover_url || (props.item.images && props.item.images[0])"
+            <ShakaVideoPlayer
+              v-if="props.item.video_url"
+              ref="videoPlayer"
+              :src="props.item.video_url"
+              :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
               :autoplay="true"
-              :loop="true"
-              class="shaka-video-player"
-              @play="handleShakaPlay"
+              :show-controls="true"
+              :show-play-button="true"
+              :muted="false"
+              class="video-player"
+              @loaded="handleVideoLoad"
             />
-            <!-- 普通视频播放（原始视频或无MPD时） -->
-            <template v-else>
-              <div v-if="!isVideoLoaded" class="video-placeholder">
-                <img 
-                  v-if="props.item.cover_url || (props.item.images && props.item.images[0])" 
-                  :src="props.item.cover_url || props.item.images[0]" 
-                  :alt="props.item.title || '视频封面'"
-                  class="video-cover-placeholder"
-                />
-              </div>
-              <video 
-                v-show="isVideoLoaded"
-                ref="videoPlayer"
-                :src="effectiveVideoUrl" 
-                :poster="props.item.cover_url || (props.item.images && props.item.images[0])"
-                controls 
-                preload="metadata"
-                webkit-playsinline="true"
-                playsinline="true"
-                loop
-                class="video-player"
-                @loadedmetadata="handleVideoLoad"
-              >
-                您的浏览器不支持视频播放
-              </video>
-            </template>
-            <!-- 转码状态提示 -->
-            <div v-if="transcodeStatus === 'processing' || transcodeStatus === 'pending'" class="transcode-status-overlay">
-              <div class="transcode-status-content">
-                <div class="transcode-spinner"></div>
-                <span>{{ transcodeStatus === 'processing' ? '视频转码中...' : '转码排队中...' }}</span>
-              </div>
+            <div v-else class="video-placeholder">
+              <SvgIcon name="video" width="48" height="48" />
+              <p>视频加载中...</p>
             </div>
           </div>
           <!-- 图片轮播（图文笔记） -->
@@ -122,47 +94,21 @@
           <div class="scrollable-content" ref="scrollableContent">
             <!-- 视频播放器（移动端） -->
             <div v-if="props.item.type === 2" class="mobile-video-container">
-              <!-- 使用Shaka Player播放DASH流（当MPD可用时） -->
-              <ShakaPlayer
-                v-if="effectiveVideoUrl && effectiveVideoUrl.endsWith('.mpd')"
-                ref="mobileShakaPlayerRef"
-                :src="effectiveVideoUrl"
-                :poster="props.item.cover_url || (props.item.images && props.item.images[0])"
-                :autoplay="false"
-                class="mobile-shaka-player"
+              <ShakaVideoPlayer
+                v-if="props.item.video_url"
+                ref="mobileVideoPlayer"
+                :src="props.item.video_url"
+                :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
+                :autoplay="true"
+                :show-controls="true"
+                :show-play-button="true"
+                :muted="false"
+                class="mobile-video-player"
+                @loaded="handleVideoLoad"
               />
-              <!-- 普通视频播放（原始视频或无MPD时） -->
-              <template v-else>
-                <div v-if="!isVideoLoaded" class="video-placeholder">
-                  <img 
-                    v-if="props.item.cover_url || (props.item.images && props.item.images[0])" 
-                    :src="props.item.cover_url || props.item.images[0]" 
-                    :alt="props.item.title || '视频封面'"
-                    class="video-cover-placeholder"
-                  />
-                  <div v-else class="placeholder-content">
-                    <SvgIcon name="video" width="48" height="48" />
-                    <p>视频加载中...</p>
-                  </div>
-                </div>
-                <video 
-                  v-show="isVideoLoaded"
-                  ref="mobileVideoPlayer"
-                  :src="effectiveVideoUrl" 
-                  :poster="props.item.cover_url || (props.item.images && props.item.images[0])"
-                  controls 
-                  preload="metadata"
-                  webkit-playsinline="true"
-                  playsinline="true"
-                  class="mobile-video-player"
-                  @loadedmetadata="handleVideoLoad"
-                >
-                  您的浏览器不支持视频播放
-                </video>
-              </template>
-              <!-- 转码状态提示 -->
-              <div v-if="transcodeStatus === 'processing' || transcodeStatus === 'pending'" class="transcode-status-badge">
-                <span>{{ transcodeStatus === 'processing' ? '转码中' : '排队中' }}</span>
+              <div v-else class="video-placeholder">
+                <SvgIcon name="video" width="48" height="48" />
+                <p>视频加载中...</p>
               </div>
             </div>
             <!-- 图片轮播（图文笔记） -->
@@ -465,18 +411,18 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import SvgIcon from './SvgIcon.vue'
-import FollowButton from './FollowButton.vue'
-import LikeButton from './LikeButton.vue'
-import MessageToast from './MessageToast.vue'
-import EmojiPicker from '@/components/EmojiPicker.vue'
-import MentionModal from '@/components/mention/MentionModal.vue'
-import ContentRenderer from './ContentRenderer.vue'
 import ContentEditableInput from './ContentEditableInput.vue'
+import ContentRenderer from './ContentRenderer.vue'
+import EmojiPicker from '@/components/EmojiPicker.vue'
+import FollowButton from './FollowButton.vue'
 import ImageUploadModal from './modals/ImageUploadModal.vue'
 import ImageViewer from './ImageViewer.vue'
+import LikeButton from './LikeButton.vue'
+import MentionModal from '@/components/mention/MentionModal.vue'
+import MessageToast from './MessageToast.vue'
+import ShakaVideoPlayer from './ShakaVideoPlayer.vue'
+import SvgIcon from './SvgIcon.vue'
 import VerifiedBadge from './VerifiedBadge.vue'
-import ShakaPlayer from './ShakaPlayer.vue'
 import { useThemeStore } from '@/stores/theme'
 import { useUserStore } from '@/stores/user'
 import { useLikeStore } from '@/stores/like.js'
@@ -487,16 +433,11 @@ import { useCommentStore } from '@/stores/comment'
 import { useCommentLikeStore } from '@/stores/commentLike'
 import { commentApi, userApi, postApi, imageUploadApi } from '@/api/index.js'
 import { getPostDetail } from '@/api/posts.js'
-import { videoApi } from '@/api/video.js'
 import { useScrollLock } from '@/composables/useScrollLock'
-import { usePlayerConfig } from '@/composables/usePlayerConfig.js'
 import { formatTime } from '@/utils/timeFormat'
 import defaultAvatar from '@/assets/imgs/avatar.png'
 
 const router = useRouter()
-
-// 获取播放器配置
-const { config: playerConfig, loadConfig } = usePlayerConfig()
 
 const props = defineProps({
   disableAutoFetch: {
@@ -524,63 +465,13 @@ const props = defineProps({
 
 
 // 处理视频加载
-const handleVideoLoad = (event) => {
-  const video = event.target
-  const aspectRatio = video.videoWidth / video.videoHeight
-
-  // 桌面端视频容器宽度计算
-  if (window.innerWidth > 768) {
-    const minWidth = 300
-    const maxWidth = props.pageMode ? 500 : 750
-    const containerHeight = Math.min(window.innerHeight * 0.9, 1020)
-    const idealWidth = containerHeight * aspectRatio
-
-    let optimalWidth = Math.max(minWidth, Math.min(maxWidth, idealWidth))
-
-    if (aspectRatio <= 0.6) {
-      optimalWidth = Math.min(optimalWidth, 500)
-    } else if (aspectRatio <= 0.8) {
-      optimalWidth = Math.min(optimalWidth, 600)
-    } else if (aspectRatio >= 2.0) {
-      optimalWidth = Math.max(optimalWidth, 600)
-    } else if (aspectRatio >= 1.5) {
-      optimalWidth = Math.max(optimalWidth, 550)
-    }
-
-    imageSectionWidth.value = optimalWidth
-  }
-
-  // 视频加载完成，隐藏封面并开始播放
-  isVideoLoaded.value = true
-  
-  // 延迟一点时间确保视频完全准备好
-  setTimeout(() => {
-    autoPlayVideo()
-  }, 100)
+const handleVideoLoad = () => {
+  // ShakaVideoPlayer handles sizing and loading states automatically
+  // No additional actions needed here
 }
 
-// 自动播放视频
-const autoPlayVideo = () => {
-  try {
-    // 检查是否为移动端
-    const isMobile = window.innerWidth <= 768
-    const currentVideoPlayer = isMobile ? mobileVideoPlayer.value : videoPlayer.value
-    
-    if (currentVideoPlayer) {
-      // 尝试自动播放
-      const playPromise = currentVideoPlayer.play()
-      
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          // 自动播放失败（通常是由于浏览器策略）
-          console.log('视频自动播放失败，需要用户交互:', error.message)
-        })
-      }
-    }
-  } catch (error) {
-    console.log('视频自动播放异常:', error.message)
-  }
-}
+// 自动播放视频 - Not needed anymore as ShakaVideoPlayer handles autoplay internally
+// The autoplay prop is set to false in the player component, so user interaction is required
 
 const emit = defineEmits(['close', 'follow', 'unfollow', 'like', 'collect'])
 
@@ -628,145 +519,9 @@ const likeButtonRef = ref(null)
 const isAnimating = ref(true)
 const showContent = ref(false) // 新增：控制内容显示
 const isClosing = ref(false) // 新增：控制关闭动画状态
-const isVideoLoaded = ref(false) // 视频加载状态
-
-// Shaka Player refs
-const shakaPlayerRef = ref(null)
-const mobileShakaPlayerRef = ref(null)
-
-// 转码状态相关
-const transcodeStatus = ref(props.item.transcode_status || 'none')
-const mpdPath = ref(props.item.mpd_path || null)
-let transcodeStatusPollTimer = null
-
-// 有效的视频URL（根据后端配置决定是否优先使用MPD）
-const effectiveVideoUrl = computed(() => {
-  // 检查后端配置是否启用优先使用MPD
-  if (playerConfig.prefer_mpd && mpdPath.value && transcodeStatus.value === 'completed') {
-    return mpdPath.value
-  }
-  return props.item.video_url
-})
-
-// 开始轮询转码状态
-const startTranscodeStatusPoll = () => {
-  if (props.item.type !== 2) return
-  if (transcodeStatus.value === 'completed' || transcodeStatus.value === 'none' || transcodeStatus.value === 'failed') return
-  
-  // 每5秒检查一次转码状态
-  transcodeStatusPollTimer = setInterval(async () => {
-    try {
-      const result = await videoApi.getTranscodeStatus(props.item.id)
-      if (result.success && result.data) {
-        transcodeStatus.value = result.data.transcode_status
-        if (result.data.mpd_path) {
-          mpdPath.value = result.data.mpd_path
-        }
-        
-        // 如果转码完成或失败，停止轮询
-        if (result.data.transcode_status === 'completed' || result.data.transcode_status === 'failed') {
-          stopTranscodeStatusPoll()
-        }
-      }
-    } catch (error) {
-      console.error('获取转码状态失败:', error)
-    }
-  }, 5000)
-}
-
-// 停止轮询转码状态
-const stopTranscodeStatusPoll = () => {
-  if (transcodeStatusPollTimer) {
-    clearInterval(transcodeStatusPollTimer)
-    transcodeStatusPollTimer = null
-  }
-}
-
-// Shaka Player播放事件处理
-const handleShakaPlay = () => {
-  // Placeholder for future analytics or logging
-}
 
 // 移动端检测
 const isMobile = computed(() => windowWidth.value <= 768)
-
-// 视频进度与音量记忆
-const getStorageKeys = (url) => {
-  const safeKey = url ? encodeURIComponent(url) : 'unknown'
-  return {
-    timeKey: `video_progress_${safeKey}`,
-    volumeKey: 'video_volume_global'
-  }
-}
-
-const restoreMediaStateFor = (el, url) => {
-  if (!el) return
-  const { timeKey, volumeKey } = getStorageKeys(url)
-  try {
-    // 恢复音量（默认 0.5）
-    const savedVolume = localStorage.getItem(volumeKey)
-    const volume = savedVolume !== null ? Number(savedVolume) : 0.5
-    el.volume = Math.max(0, Math.min(1, isNaN(volume) ? 0.5 : volume))
-
-    // 恢复进度
-    const savedTime = localStorage.getItem(timeKey)
-    if (savedTime !== null) {
-      const targetTime = Number(savedTime)
-      const seekOnMetadata = () => {
-        el.currentTime = isNaN(targetTime) ? 0 : targetTime
-        el.removeEventListener('loadedmetadata', seekOnMetadata)
-      }
-      if (el.readyState >= 1) {
-        el.currentTime = isNaN(targetTime) ? 0 : targetTime
-      } else {
-        el.addEventListener('loadedmetadata', seekOnMetadata)
-      }
-    }
-  } catch (_) {}
-}
-
-const mediaHandlersMap = new WeakMap()
-
-const bindMediaListenersFor = (el, url) => {
-  if (!el) return
-  const { timeKey, volumeKey } = getStorageKeys(url)
-  const handlers = {
-    timeupdate: () => {
-      try { localStorage.setItem(timeKey, String(el.currentTime || 0)) } catch (_) {}
-    },
-    volumechange: () => {
-      try { localStorage.setItem(volumeKey, String(el.volume)) } catch (_) {}
-    }
-  }
-  el.addEventListener('timeupdate', handlers.timeupdate)
-  el.addEventListener('volumechange', handlers.volumechange)
-  mediaHandlersMap.set(el, handlers)
-}
-
-const unbindMediaListenersFor = (el) => {
-  if (!el) return
-  const handlers = mediaHandlersMap.get(el)
-  if (handlers) {
-    el.removeEventListener('timeupdate', handlers.timeupdate)
-    el.removeEventListener('volumechange', handlers.volumechange)
-    mediaHandlersMap.delete(el)
-  }
-}
-
-const setupMediaPersistence = () => {
-  const url = props.item?.video_url || ''
-  // 恢复
-  restoreMediaStateFor(videoPlayer.value, url)
-  restoreMediaStateFor(mobileVideoPlayer.value, url)
-  // 绑定
-  bindMediaListenersFor(videoPlayer.value, url)
-  bindMediaListenersFor(mobileVideoPlayer.value, url)
-}
-
-const teardownMediaPersistence = () => {
-  unbindMediaListenersFor(videoPlayer.value)
-  unbindMediaListenersFor(mobileVideoPlayer.value)
-}
 
 // 动画完成后再显示复杂内容
 const handleAnimationEnd = (event) => {
@@ -808,46 +563,6 @@ onMounted(() => {
 })
 
 // 当视频加载完成或引用可用时，恢复与绑定；URL 变更时重置
-watch(() => isVideoLoaded.value, (loaded) => {
-  if (loaded) {
-    teardownMediaPersistence()
-    setupMediaPersistence()
-  }
-})
-
-watch(() => props.item?.video_url, () => {
-  teardownMediaPersistence()
-  nextTick(() => setupMediaPersistence())
-})
-
-// 首次默认音量 0.5（若未存过）
-onMounted(async () => {
-  // 加载播放器配置
-  await loadConfig()
-  
-  const url = props.item?.video_url || ''
-  try {
-    const { volumeKey } = getStorageKeys(url)
-    const savedVolume = localStorage.getItem(volumeKey)
-    if (savedVolume === null) {
-      // 使用后端配置的默认音量
-      const defaultVolume = playerConfig.default_volume ?? 0.5
-      if (videoPlayer.value) videoPlayer.value.volume = defaultVolume
-      if (mobileVideoPlayer.value) mobileVideoPlayer.value.volume = defaultVolume
-    }
-  } catch (_) {}
-  
-  // 如果视频正在转码，开始轮询状态
-  if (props.item.type === 2 && (props.item.transcode_status === 'pending' || props.item.transcode_status === 'processing')) {
-    startTranscodeStatusPoll()
-  }
-})
-
-onUnmounted(() => {
-  teardownMediaPersistence()
-  stopTranscodeStatusPoll()
-})
-
 const showToast = ref(false)
 const toastMessage = ref('')
 const toastType = ref('success')
@@ -2702,12 +2417,8 @@ onMounted(async () => {
     })
   }
 
-  // 自动播放视频
-  if (props.item.type === 2 && props.item.video_url) {
-    nextTick(() => {
-      autoPlayVideo()
-    })
-  }
+  // 注意：视频自动播放由 ShakaVideoPlayer 组件的 autoplay 属性控制
+  // 不再需要单独的 autoPlayVideo 函数调用
 
   adjustMobilePadding()
 })
@@ -3069,9 +2780,7 @@ function handleAvatarError(event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #000;
-  border-radius: inherit;
-  overflow: hidden;
+  background: var(--bg-color-secondary);
 }
 
 .video-player {
@@ -3080,75 +2789,6 @@ function handleAvatarError(event) {
   max-width: 1000px;
   object-fit: contain;
   background: #000;
-}
-
-/* Shaka Player 样式 */
-.shaka-video-player {
-  width: 100%;
-  height: 100%;
-  max-width: 1000px;
-  border-radius: inherit;
-  background: #000;
-  overflow: hidden;
-}
-
-.shaka-video-player :deep(.shaka-player-container) {
-  border-radius: inherit;
-}
-
-.shaka-video-player :deep(.shaka-video) {
-  border-radius: inherit;
-}
-
-.mobile-shaka-player {
-  width: 100%;
-  height: 100%;
-  background: #000;
-  border-radius: 0;
-}
-
-/* 转码状态覆盖层 */
-.transcode-status-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-}
-
-.transcode-status-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  color: white;
-  font-size: 14px;
-}
-
-.transcode-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.transcode-status-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  z-index: 10;
 }
 
 /* 视频占位符样式 */
@@ -4492,7 +4132,7 @@ function handleAvatarError(event) {
     min-height: 200px;
     margin-bottom: 16px;
     position: relative;
-    background: #000;
+    background: var(--bg-color-secondary);
     overflow: hidden;
     align-items: center;
     justify-content: center;
@@ -4503,12 +4143,6 @@ function handleAvatarError(event) {
     height: 100%;
     max-width: 1000px;
     object-fit: contain;
-    background: #000;
-  }
-
-  .mobile-shaka-player {
-    width: 100%;
-    height: 100%;
     background: #000;
   }
 

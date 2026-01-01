@@ -97,12 +97,8 @@ CREATE TABLE IF NOT EXISTS `post_videos` (
   `post_id` bigint(20) NOT NULL COMMENT '笔记ID',
   `cover_url` varchar(500) DEFAULT NULL COMMENT '视频封面URL',
   `video_url` varchar(500) NOT NULL COMMENT '视频URL',
-  `mpd_path` varchar(500) DEFAULT NULL COMMENT 'DASH MPD文件路径',
-  `transcode_status` ENUM('pending', 'processing', 'completed', 'failed', 'none') DEFAULT 'none' COMMENT '转码状态',
-  `transcode_task_id` varchar(100) DEFAULT NULL COMMENT '转码任务ID',
   PRIMARY KEY (`id`),
   KEY `idx_post_id` (`post_id`),
-  KEY `idx_transcode_status` (`transcode_status`),
   CONSTRAINT `post_videos_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='笔记视频表';
 
@@ -283,48 +279,6 @@ CREATE TABLE IF NOT EXISTS `points_log` (
   KEY `idx_created_at` (`created_at`),
   CONSTRAINT `points_log_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='石榴点变动记录表';
-
--- 18. 系统设置表
-CREATE TABLE IF NOT EXISTS `system_settings` (
-  `id` int(11) NOT NULL AUTO_INCREMENT COMMENT '设置ID',
-  `setting_key` varchar(100) NOT NULL COMMENT '设置键名',
-  `setting_value` text NOT NULL COMMENT '设置值（JSON格式）',
-  `setting_group` varchar(50) NOT NULL DEFAULT 'general' COMMENT '设置分组',
-  `description` varchar(255) DEFAULT NULL COMMENT '设置描述',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_setting_key` (`setting_key`),
-  KEY `idx_setting_group` (`setting_group`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统设置表';
-
--- 插入默认视频转码设置
-INSERT INTO `system_settings` (`setting_key`, `setting_value`, `setting_group`, `description`) VALUES 
-('video_transcode_enabled', 'false', 'video', '是否启用视频转码'),
-('video_transcode_min_bitrate', '500', 'video', '视频转码最小码率(kbps)'),
-('video_transcode_max_bitrate', '2500', 'video', '视频转码最大码率(kbps)'),
-('video_transcode_format', 'dash', 'video', '视频转码格式(dash/hls)'),
-('video_transcode_segment_duration', '4', 'video', 'DASH切片时长(秒)')
-ON DUPLICATE KEY UPDATE `setting_key` = VALUES(`setting_key`);
-
--- 插入默认播放器设置
-INSERT INTO `system_settings` (`setting_key`, `setting_value`, `setting_group`, `description`) VALUES 
--- 播放器基本设置
-('player_autoplay', 'false', 'player', '是否自动播放视频'),
-('player_loop', 'false', 'player', '是否循环播放视频'),
-('player_muted', 'false', 'player', '是否默认静音'),
-('player_default_volume', '0.5', 'player', '默认音量(0-1)'),
-('player_show_controls', 'true', 'player', '是否显示播放控件'),
--- Shaka Player 流媒体设置
-('player_buffering_goal', '30', 'player', '缓冲目标时长(秒)'),
-('player_rebuffering_goal', '2', 'player', '重新缓冲目标时长(秒)'),
-('player_buffer_behind', '30', 'player', '保留已播放缓冲时长(秒)'),
--- 自适应码率(ABR)设置
-('player_abr_enabled', 'true', 'player', '是否启用自适应码率'),
-('player_abr_default_bandwidth', '1000000', 'player', '默认带宽估计(bps)'),
--- 播放器UI设置
-('player_prefer_mpd', 'true', 'player', '优先使用MPD格式(当可用时)')
-ON DUPLICATE KEY UPDATE `setting_key` = VALUES(`setting_key`);
 
 -- 插入默认管理员账户
 -- 密码: 123456
