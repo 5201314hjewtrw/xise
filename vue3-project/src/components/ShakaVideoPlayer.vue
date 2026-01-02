@@ -13,7 +13,18 @@
       
       <!-- 自定义控制栏 -->
       <div v-if="showControls" class="custom-controls" :class="{ 'visible': controlsVisible || !isPlaying }">
-        <!-- 播放/暂停按钮 -->
+        <!-- PC版：进度条独立显示在上方 -->
+        <div class="progress-row pc-only">
+          <div class="progress-container" @click="seek" @mouseenter="controlsVisible = true">
+            <div class="progress-bar">
+              <div class="progress-buffered" :style="{ width: bufferedPercent + '%' }"></div>
+              <div class="progress-played" :style="{ width: playedPercent + '%' }"></div>
+              <div class="progress-handle" :style="{ left: playedPercent + '%' }"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 控制按钮行 -->
         <div class="controls-row">
           <button 
             v-if="showPlayButton"
@@ -24,8 +35,8 @@
             <SvgIcon :name="isPlaying ? 'pause' : 'play'" width="20" height="20" />
           </button>
 
-          <!-- 进度条 -->
-          <div class="progress-container" @click="seek" @mouseenter="controlsVisible = true">
+          <!-- 移动端：进度条在控制行内 -->
+          <div class="progress-container mobile-only" @click="seek" @mouseenter="controlsVisible = true">
             <div class="progress-bar">
               <div class="progress-buffered" :style="{ width: bufferedPercent + '%' }"></div>
               <div class="progress-played" :style="{ width: playedPercent + '%' }"></div>
@@ -1076,8 +1087,6 @@ defineExpose({
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 8px var(--shadow-color);
-  container-type: inline-size;
-  container-name: video-player;
 }
 
 .video-container {
@@ -1130,6 +1139,26 @@ defineExpose({
   opacity: 1;
 }
 
+/* PC版和移动版显示控制 */
+.pc-only {
+  display: flex;
+}
+
+.mobile-only {
+  display: none;
+}
+
+/* 进度条行（PC版独立显示在上方） */
+.progress-row {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+/* 移动端controls-row中的进度条需要flex:1 */
+.controls-row .progress-container {
+  display: none; /* PC端默认不显示controls-row中的进度条 */
+}
+
 .controls-row {
   display: flex;
   align-items: center;
@@ -1160,10 +1189,9 @@ defineExpose({
 
 /* 进度条 */
 .progress-container {
-  flex: 1;
+  width: 100%;
   cursor: pointer;
-  padding: 10px 0;
-  margin: 0 4px;
+  padding: 8px 0;
 }
 
 .progress-container:hover .progress-bar {
@@ -1439,57 +1467,39 @@ defineExpose({
   object-fit: contain;
 }
 
-/* 容器查询：当视频播放器宽度较小时隐藏部分控件 */
-@container video-player (max-width: 500px) {
-  .volume-control {
-    display: none;
-  }
-  
-  .time-display {
-    min-width: 70px;
-    font-size: 11px;
-  }
-  
-  .quality-control {
-    display: none;
-  }
-  
-  .controls-row {
-    gap: 8px;
-  }
-}
-
-/* 非常窄的视频播放器：进一步优化 */
-@container video-player (max-width: 400px) {
-  .time-display {
-    display: none;
-  }
-  
-  .controls-row {
-    gap: 6px;
-  }
-  
-  .custom-controls {
-    padding: 20px 12px 12px;
-  }
-}
-
-/* 响应式设计 */
+/* 响应式设计 - 移动端恢复单行布局 */
 @media (max-width: 768px) {
-  .volume-control {
-    display: none;
+  /* 移动端：隐藏独立的进度条行，使用controls-row中的进度条 */
+  .pc-only {
+    display: none !important;
   }
-
-  .time-display {
-    font-size: 11px;
+  
+  .mobile-only {
+    display: block;
   }
-
+  
+  /* 移动端controls-row中显示进度条 */
+  .controls-row .progress-container {
+    display: block;
+    flex: 1;
+    padding: 10px 0;
+    margin: 0 4px;
+  }
+  
   .custom-controls {
     padding: 8px;
   }
-
+  
   .controls-row {
     gap: 8px;
+  }
+
+  .volume-control {
+    display: none;
+  }
+
+  .time-display {
+    font-size: 11px;
   }
 }
 </style>
