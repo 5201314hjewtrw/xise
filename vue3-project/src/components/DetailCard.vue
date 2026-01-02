@@ -2766,7 +2766,7 @@ function handleAvatarError(event) {
   align-items: center;
   justify-content: center;
   position: relative;
-  z-index: 1;
+  z-index: 10;
 }
 
 .image-section img {
