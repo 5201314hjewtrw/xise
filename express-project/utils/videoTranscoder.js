@@ -278,8 +278,16 @@ async function convertToDash(inputPath, userId, progressCallback) {
       
       // 添加硬件加速（如果启用）
       if (ffmpegOpts.hardwareAccel && ffmpegOpts.hardwareAccelType) {
-        command.inputOptions([`-hwaccel ${ffmpegOpts.hardwareAccelType}`]);
-        console.log(`⚡ 启用硬件加速: ${ffmpegOpts.hardwareAccelType}`);
+        // 验证硬件加速类型，防止命令注入
+        const validAccelTypes = ['cuda', 'qsv', 'videotoolbox', 'vaapi', 'dxva2', 'amf', 'vdpau'];
+        const accelType = ffmpegOpts.hardwareAccelType.toLowerCase().trim();
+        
+        if (validAccelTypes.includes(accelType)) {
+          command.inputOptions([`-hwaccel ${accelType}`]);
+          console.log(`⚡ 启用硬件加速: ${accelType}`);
+        } else {
+          console.warn(`⚠️ 不支持的硬件加速类型: ${accelType}，跳过硬件加速`);
+        }
       }
       
       // 为每个分辨率添加输出流
@@ -294,12 +302,20 @@ async function convertToDash(inputPath, userId, progressCallback) {
         ];
         
         // 如果设置了 CRF，使用恒定质量模式（CRF本身就是动态码率）
-        if (ffmpegOpts.crf !== null && ffmpegOpts.crf >= 0 && ffmpegOpts.crf <= 51) {
+        // CRF范围: 10-51，值越小质量越高（0-9 接近无损，文件过大）
+        if (ffmpegOpts.crf !== null && ffmpegOpts.crf >= 10 && ffmpegOpts.crf <= 51) {
           videoOptions.push(`-crf:v:${index} ${ffmpegOpts.crf}`);
           // CRF模式下设置最大码率上限，确保不会超出预期
           videoOptions.push(`-maxrate:v:${index} ${Math.floor(resolution.bitrate * 1.2)}k`);
           videoOptions.push(`-bufsize:v:${index} ${Math.floor(resolution.bitrate * 2)}k`);
           console.log(`📊 流${index} CRF模式: CRF=${ffmpegOpts.crf}, 最大码率=${Math.floor(resolution.bitrate * 1.2)}k`);
+        } else if (ffmpegOpts.crf !== null) {
+          // CRF 值无效，回退到 VBR 模式
+          console.warn(`⚠️ CRF 值 ${ffmpegOpts.crf} 无效（有效范围10-51），使用 VBR 模式`);
+          videoOptions.push(`-b:v:${index} ${resolution.bitrate}k`);
+          videoOptions.push(`-maxrate:v:${index} ${Math.floor(resolution.bitrate * 1.5)}k`);
+          videoOptions.push(`-bufsize:v:${index} ${Math.floor(resolution.bitrate * 3)}k`);
+          console.log(`📊 流${index} VBR模式: 目标=${resolution.bitrate}k, 最大=${Math.floor(resolution.bitrate * 1.5)}k, 缓冲=${Math.floor(resolution.bitrate * 3)}k`);
         } else {
           // 使用动态码率模式 (VBR - Variable Bitrate)
           // -b:v 设置平均目标码率

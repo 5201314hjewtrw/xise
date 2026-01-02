@@ -182,8 +182,16 @@ const config = {
       preset: process.env.FFMPEG_PRESET || 'medium',
       // 编码配置
       profile: process.env.FFMPEG_PROFILE || 'main',
-      // CRF值 (恒定质量模式)
-      crf: process.env.FFMPEG_CRF ? parseInt(process.env.FFMPEG_CRF) : null,
+      // CRF值 (恒定质量模式) - 验证范围10-51
+      crf: (() => {
+        if (!process.env.FFMPEG_CRF) return null;
+        const crf = parseInt(process.env.FFMPEG_CRF);
+        if (isNaN(crf) || crf < 10 || crf > 51) {
+          console.warn(`⚠️ 无效的 FFMPEG_CRF 值: ${process.env.FFMPEG_CRF}，有效范围10-51，将使用 VBR 模式`);
+          return null;
+        }
+        return crf;
+      })(),
       // GOP大小 (关键帧间隔)
       gopSize: process.env.FFMPEG_GOP_SIZE ? parseInt(process.env.FFMPEG_GOP_SIZE) : null,
       // B帧数量

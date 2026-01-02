@@ -524,7 +524,12 @@ const selectQuality = (quality) => {
       abr: { 
         enabled: true,
         restrictions: {
-          maxHeight: maxResolutionHeight || Infinity
+          minBandwidth: 0,
+          maxBandwidth: Infinity,
+          maxHeight: maxResolutionHeight || Infinity,
+          minHeight: 0,
+          maxWidth: Infinity,
+          minWidth: 0
         }
       } 
     })
@@ -534,7 +539,12 @@ const selectQuality = (quality) => {
       abr: { 
         enabled: false,
         restrictions: {
-          maxHeight: Infinity  // 手动模式不限制
+          minBandwidth: 0,
+          maxBandwidth: Infinity,
+          maxHeight: Infinity,
+          minHeight: 0,
+          maxWidth: Infinity,
+          minWidth: 0
         }
       } 
     })
