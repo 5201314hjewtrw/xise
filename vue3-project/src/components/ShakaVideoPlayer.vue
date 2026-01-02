@@ -485,7 +485,12 @@ const seek = (event) => {
   
   const rect = event.currentTarget.getBoundingClientRect()
   const percent = (event.clientX - rect.left) / rect.width
-  videoElement.value.currentTime = duration.value * percent
+  const newTime = duration.value * percent
+  
+  // 验证新时间是有效的有限数值
+  if (isFinite(newTime) && newTime >= 0) {
+    videoElement.value.currentTime = newTime
+  }
 }
 
 // 切换静音
@@ -957,7 +962,11 @@ onBeforeUnmount(() => {
 defineExpose({
   play: () => videoElement.value?.play(),
   pause: () => videoElement.value?.pause(),
-  seek: (time) => { if (videoElement.value) videoElement.value.currentTime = time }
+  seek: (time) => { 
+    if (videoElement.value && isFinite(time) && time >= 0) {
+      videoElement.value.currentTime = time
+    }
+  }
 })
 </script>
 
