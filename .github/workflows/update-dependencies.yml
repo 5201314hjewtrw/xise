@@ -80,8 +80,7 @@ jobs:
         run: |
           echo "## 📦 Dependency Updates" > /tmp/pr_body.md
           echo "" >> /tmp/pr_body.md
-          echo "Updates all dependencies to latest stable versions." \
-            >> /tmp/pr_body.md
+          echo "Updates all dependencies to latest stable versions." >> /tmp/pr_body.md
           echo "" >> /tmp/pr_body.md
 
           if [ -f vue3-project/package.json ]; then
@@ -112,8 +111,7 @@ jobs:
           echo "" >> /tmp/pr_body.md
           echo "### 🔄 How to test" >> /tmp/pr_body.md
           echo "1. Pull this branch" >> /tmp/pr_body.md
-          echo "2. Run npm ci in vue3-project and express-project" \
-            >> /tmp/pr_body.md
+          echo "2. Run npm ci in vue3-project and express-project" >> /tmp/pr_body.md
           echo "3. Run npm run build to verify builds" >> /tmp/pr_body.md
           echo "4. Test the application thoroughly" >> /tmp/pr_body.md
 
