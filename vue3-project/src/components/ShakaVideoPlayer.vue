@@ -742,18 +742,14 @@ const selectDefaultBitrateTrack = () => {
       player.configure({ abr: { enabled: false } })
       player.selectVariantTrack(defaultTrack, true)
       
+      const abrMessage = '🎯 ABR已启用: 优先保持720p，仅在严重卡顿时降级'
+      
       // 使用一次性事件监听器来在轨道切换完成后重新启用ABR
       const reEnableAbr = () => {
         if (player && props.adaptiveBitrate) {
-          // 重新启用ABR，使用优化的配置（优先720p，仅在卡顿时降级）
-          player.configure({ 
-            abr: { 
-              enabled: true,
-              // 保持之前设置的ABR参数
-            } 
-          })
+          player.configure({ abr: { enabled: true } })
           player.removeEventListener('adaptation', reEnableAbr)
-          console.log('🎯 ABR已启用: 优先保持720p，仅在严重卡顿时降级')
+          console.log(abrMessage)
         }
       }
       
@@ -764,12 +760,8 @@ const selectDefaultBitrateTrack = () => {
       setTimeout(() => {
         if (player && props.adaptiveBitrate) {
           player.removeEventListener('adaptation', reEnableAbr)
-          player.configure({ 
-            abr: { 
-              enabled: true,
-            } 
-          })
-          console.log('🎯 ABR已启用: 优先保持720p，仅在严重卡顿时降级')
+          player.configure({ abr: { enabled: true } })
+          console.log(abrMessage)
         }
       }, 3000)
       
