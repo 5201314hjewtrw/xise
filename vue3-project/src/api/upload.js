@@ -56,6 +56,15 @@ export async function uploadImage(file, options = {}) {
     const formData = new FormData()
     const filename = options.filename || (compressedFile instanceof File ? compressedFile.name : 'image.png')
     formData.append('file', compressedFile, filename)
+    
+    // 添加水印选项（默认启用）
+    const applyWatermark = options.watermark !== false
+    formData.append('watermark', applyWatermark.toString())
+    
+    // 添加水印透明度（如果用户指定）
+    if (options.watermarkOpacity !== undefined) {
+      formData.append('watermarkOpacity', options.watermarkOpacity.toString())
+    }
 
     // 创建AbortController用于超时控制
     const controller = new AbortController()
@@ -101,7 +110,7 @@ export async function uploadImage(file, options = {}) {
 
 export async function uploadImages(files, options = {}) {
   try {
-    const { maxCount = 9, onProgress, onSingleComplete } = options
+    const { maxCount = 9, onProgress, onSingleComplete, watermark, watermarkOpacity } = options
     const fileArray = Array.from(files)
 
     if (fileArray.length === 0) throw new Error('请选择要上传的文件')
@@ -120,7 +129,8 @@ export async function uploadImages(files, options = {}) {
           percent: Math.round(((i + 1) / fileArray.length) * 100)
         })
 
-        const result = await uploadImage(file)
+        // 传递水印选项（包括透明度）
+        const result = await uploadImage(file, { watermark, watermarkOpacity })
 
         if (result.success) {
           results.push(result.data)

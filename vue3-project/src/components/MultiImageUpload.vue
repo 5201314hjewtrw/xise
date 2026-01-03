@@ -44,6 +44,31 @@
       {{ error }}
     </div>
 
+    <!-- 水印选项 -->
+    <div class="watermark-option">
+      <label class="watermark-checkbox">
+        <input type="checkbox" v-model="enableWatermark" />
+        <span class="checkmark"></span>
+        <span class="label-text">添加水印</span>
+      </label>
+      
+      <!-- 水印透明度滑块（仅在启用水印时显示） -->
+      <div v-if="enableWatermark" class="watermark-opacity-slider">
+        <label class="opacity-label">
+          <span>透明度</span>
+          <span class="opacity-value">{{ watermarkOpacity }}%</span>
+        </label>
+        <input 
+          type="range" 
+          v-model.number="watermarkOpacity" 
+          min="10" 
+          max="100" 
+          step="5"
+          class="opacity-slider"
+        />
+      </div>
+    </div>
+
     <div class="upload-tips">
       <p>• 最多上传{{ maxImages }}张图片</p>
       <p>• 支持 JPG、PNG 格式</p>
@@ -89,6 +114,11 @@ const imageList = ref([])
 const error = ref('')
 const isDragOver = ref(false)
 const isUploading = ref(false)
+
+// 水印选项（默认启用）
+const enableWatermark = ref(true)
+// 水印透明度（默认50%）
+const watermarkOpacity = ref(50)
 
 // 消息提示相关
 const showToast = ref(false)
@@ -532,10 +562,13 @@ const uploadAllImages = async () => {
   error.value = ''
 
   try {
-    // 上传新图片 - 使用新的upload.js API
+    // 上传新图片 - 使用新的upload.js API，传递水印选项
     const files = unuploadedImages.map(item => item.file)
 
-    const result = await uploadApi.uploadImages(files)
+    const result = await uploadApi.uploadImages(files, { 
+      watermark: enableWatermark.value,
+      watermarkOpacity: watermarkOpacity.value 
+    })
 
     if (result.success && result.data && result.data.uploaded && result.data.uploaded.length > 0) {
       // 更新上传成功的图片状态
@@ -969,6 +1002,114 @@ defineExpose({
 
 .drag-tip .desktop-tip {
   display: inline;
+}
+
+/* 水印选项样式 */
+.watermark-option {
+  margin: 10px 0;
+  padding: 8px 0;
+}
+
+.watermark-checkbox {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  color: var(--text-color-primary);
+}
+
+.watermark-checkbox input[type="checkbox"] {
+  display: none;
+}
+
+.watermark-checkbox .checkmark {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-color-primary);
+  border-radius: 4px;
+  margin-right: 8px;
+  position: relative;
+  transition: all 0.2s ease;
+  background: var(--bg-color-primary);
+}
+
+.watermark-checkbox input[type="checkbox"]:checked + .checkmark {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.watermark-checkbox input[type="checkbox"]:checked + .checkmark::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.watermark-checkbox .label-text {
+  color: var(--text-color-secondary);
+}
+
+/* 水印透明度滑块样式 */
+.watermark-opacity-slider {
+  margin-top: 10px;
+  padding: 8px 0;
+}
+
+.opacity-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.opacity-value {
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.opacity-slider {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border-color-primary);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.opacity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.opacity-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.opacity-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* 移动端显示不同的提示 */

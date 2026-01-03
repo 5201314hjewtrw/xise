@@ -54,7 +54,7 @@ async function authenticateToken(req, res, next) {
 
       // 检查用户是否存在且活跃
       const [userRows] = await pool.execute(
-        'SELECT id, user_id, nickname, avatar, is_active FROM users WHERE id = ? AND is_active = 1',
+        'SELECT id, user_id, xise_id, nickname, avatar, is_active FROM users WHERE id = ? AND is_active = 1',
         [decoded.userId]
       );
 
@@ -110,7 +110,7 @@ async function optionalAuth(req, res, next) {
 
     // 检查用户是否存在且活跃
     const [userRows] = await pool.execute(
-      'SELECT id, user_id, nickname, avatar, is_active FROM users WHERE id = ? AND is_active = 1',
+      'SELECT id, user_id, xise_id, nickname, avatar, is_active FROM users WHERE id = ? AND is_active = 1',
       [decoded.userId]
     );
 
