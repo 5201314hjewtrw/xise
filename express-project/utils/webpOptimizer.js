@@ -376,26 +376,26 @@ class WebPOptimizer {
         newWidth = Math.round((watermarkMeta.width / watermarkMeta.height) * targetSize);
       }
       
-      // 调整水印大小并应用透明度
+      // 调整水印大小
       const opacity = this.options.watermarkOpacity / 100;
-      watermark = watermark
-        .resize(newWidth, newHeight)
-        .ensureAlpha()
-        .modulate({ brightness: 1 });
+      console.log(`WebP Optimizer: 水印缩放 - 目标尺寸: ${newWidth}x${newHeight}, 透明度: ${opacity * 100}%`);
       
-      // 获取水印Buffer并应用透明度
-      const watermarkBuffer = await watermark
-        .composite([{
-          input: Buffer.from([MAX_ALPHA, MAX_ALPHA, MAX_ALPHA, Math.round(opacity * MAX_ALPHA)]),
-          raw: {
-            width: 1,
-            height: 1,
-            channels: 4
-          },
-          tile: true,
-          blend: 'dest-in'
-        }])
-        .toBuffer();
+      // 获取水印Buffer - 简单调整大小，保持原有透明度
+      let watermarkBuffer;
+      if (opacity < 1) {
+        // 需要调整透明度时，使用 linear 方法
+        watermarkBuffer = await watermark
+          .resize(newWidth, newHeight)
+          .ensureAlpha()
+          .linear(opacity, 0)  // 使用 linear 调整整体透明度
+          .toBuffer();
+      } else {
+        // 不需要调整透明度时，直接使用原图
+        watermarkBuffer = await watermark
+          .resize(newWidth, newHeight)
+          .ensureAlpha()
+          .toBuffer();
+      }
       
       // 计算位置
       const position = this.getWatermarkPosition(
@@ -410,6 +410,8 @@ class WebPOptimizer {
           preciseY: this.options.watermarkPreciseY
         }
       );
+      
+      console.log(`WebP Optimizer: 水印位置 - x: ${position.x}, y: ${position.y}`);
       
       // 应用水印
       return image.composite([{

@@ -92,8 +92,11 @@ router.post('/single', authenticateToken, upload.single('file'), async (req, res
     const applyWatermark = req.body.watermark !== 'false' && req.body.watermark !== false;
 
     // 准备用户上下文（用于水印）
+    // 格式: xise_id 或 user_id @nickname
+    const userId = req.user?.xise_id || req.user?.user_id || 'guest';
+    const nickname = req.user?.nickname ? `@${req.user.nickname}` : '';
     const context = {
-      username: req.user?.username || 'guest',
+      username: nickname ? `${userId} ${nickname}` : userId,
       userId: req.user?.id,
       applyWatermark: applyWatermark
     };
@@ -143,8 +146,11 @@ router.post('/multiple', authenticateToken, upload.array('files', 9), async (req
     const applyWatermark = req.body.watermark !== 'false' && req.body.watermark !== false;
 
     // 准备用户上下文（用于水印）
+    // 格式: xise_id 或 user_id @nickname
+    const odIdMultiple = req.user?.xise_id || req.user?.user_id || 'guest';
+    const nicknameMultiple = req.user?.nickname ? `@${req.user.nickname}` : '';
     const context = {
-      username: req.user?.username || 'guest',
+      username: nicknameMultiple ? `${odIdMultiple} ${nicknameMultiple}` : odIdMultiple,
       userId: req.user?.id,
       applyWatermark: applyWatermark
     };
@@ -244,8 +250,11 @@ router.post('/video', authenticateToken, videoUpload.fields([
     const applyWatermark = req.body.watermark !== 'false' && req.body.watermark !== false;
 
     // 准备用户上下文（用于缩略图水印）
+    // 格式: xise_id 或 user_id @nickname
+    const userIdVideo = req.user?.xise_id || req.user?.user_id || 'guest';
+    const nicknameVideo = req.user?.nickname ? `@${req.user.nickname}` : '';
     const context = {
-      username: req.user?.username || 'guest',
+      username: nicknameVideo ? `${userIdVideo} ${nicknameVideo}` : userIdVideo,
       userId: req.user?.id,
       applyWatermark: applyWatermark
     };
