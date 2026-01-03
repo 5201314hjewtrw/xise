@@ -743,7 +743,17 @@ class WebPOptimizer {
     }
     
     // 前端自定义选项优先，否则使用后端配置
-    const fontSize = context.usernameFontSize || this.options.usernameWatermarkFontSize;
+    // 获取基础字体大小（用户指定的或后端默认的）
+    const baseFontSize = context.usernameFontSize || this.options.usernameWatermarkFontSize;
+    
+    // 计算实际字体大小：基于图片尺寸进行缩放，确保不同分辨率下水印视觉大小一致
+    // 参考尺寸：以1200px宽度为基准
+    const referenceWidth = 1200;
+    const imageShortSide = Math.min(metadata.width, metadata.height);
+    // 缩放因子：限制在0.5-2.0范围内，避免过小或过大
+    const scaleFactor = Math.max(0.5, Math.min(2.0, imageShortSide / referenceWidth));
+    const fontSize = Math.round(baseFontSize * scaleFactor);
+    
     const opacity = context.usernameOpacity || this.options.usernameWatermarkOpacity;
     const color = context.usernameColor || this.options.usernameWatermarkColor;
     const fontPath = this.options.usernameWatermarkFontPath;
