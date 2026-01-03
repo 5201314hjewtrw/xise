@@ -176,9 +176,13 @@ async function uploadLargeImageChunked(file, options = {}) {
     mergeFormData.append('filename', file.name)
     mergeFormData.append('fileType', 'image')
 
-    // 添加水印选项
+    // 添加用户名水印选项
     if (options.watermark !== undefined) {
       mergeFormData.append('watermark', options.watermark.toString())
+    }
+    // 添加图片水印选项
+    if (options.imageWatermark !== undefined) {
+      mergeFormData.append('imageWatermark', options.imageWatermark.toString())
     }
     if (options.watermarkOpacity !== undefined) {
       mergeFormData.append('watermarkOpacity', options.watermarkOpacity.toString())
@@ -245,11 +249,15 @@ export async function uploadImage(file, options = {}) {
     const formData = new FormData()
     formData.append('file', compressedFile, filename)
     
-    // 添加水印选项（仅当显式开启时才应用）
+    // 添加用户名水印选项（仅当显式开启时才应用）
     const applyWatermark = options.watermark === true
     formData.append('watermark', applyWatermark.toString())
     
-    // 添加水印自定义设置
+    // 添加图片水印选项（仅当显式开启时才应用）
+    const applyImageWatermark = options.imageWatermark === true
+    formData.append('imageWatermark', applyImageWatermark.toString())
+    
+    // 添加水印自定义设置（用于用户名水印）
     if (options.watermarkOpacity !== undefined) {
       formData.append('watermarkOpacity', options.watermarkOpacity.toString())
     }
@@ -311,7 +319,8 @@ export async function uploadImages(files, options = {}) {
       maxCount = 9, 
       onProgress, 
       onSingleComplete, 
-      watermark, 
+      watermark,
+      imageWatermark,
       watermarkOpacity,
       watermarkPosition,
       watermarkColor,
@@ -337,7 +346,8 @@ export async function uploadImages(files, options = {}) {
 
         // 传递水印选项（包括所有自定义设置）
         const result = await uploadImage(file, { 
-          watermark, 
+          watermark,
+          imageWatermark,
           watermarkOpacity,
           watermarkPosition,
           watermarkColor,

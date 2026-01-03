@@ -910,15 +910,17 @@ class WebPOptimizer {
     const shouldConvertToWebp = this.shouldConvert(mimetype);
     
     // 用户可以通过 context.applyWatermark 控制是否添加用户名水印
-    // 前端设置优先：如果用户在前端选择启用水印，则应用用户名水印
+    // 用户可以通过 context.applyImageWatermark 控制是否添加图片水印
+    // 前端设置优先：如果用户在前端选择启用水印，则应用对应水印
     // 后端配置作为默认值，但可以被前端覆盖
-    const userWantsWatermark = context.applyWatermark === true;
+    const userWantsUsernameWatermark = context.applyWatermark === true;
+    const userWantsImageWatermark = context.applyImageWatermark === true;
     
     // 决定是否应用各类水印：
-    // 1. 主水印（文字/图片）：仅由后端配置控制
+    // 1. 主水印（文字/图片）：用户前端选择启用 OR 后端配置启用
     // 2. 用户名水印：用户前端选择启用 OR 后端配置启用
-    const shouldApplyMainWatermark = this.options.enableWatermark;
-    const shouldApplyUsernameWatermark = userWantsWatermark || this.options.enableUsernameWatermark;
+    const shouldApplyMainWatermark = userWantsImageWatermark || this.options.enableWatermark;
+    const shouldApplyUsernameWatermark = userWantsUsernameWatermark || this.options.enableUsernameWatermark;
     const shouldApplyAnyWatermark = shouldApplyMainWatermark || shouldApplyUsernameWatermark;
     const shouldResize = this.options.maxWidth || this.options.maxHeight;
     
@@ -941,7 +943,7 @@ class WebPOptimizer {
       
       console.log(`WebP Optimizer: 处理图片 - 原始尺寸: ${metadata.width}x${metadata.height}, 格式: ${metadata.format}`);
       console.log(`WebP Optimizer: 水印配置 - 后端主水印: ${this.options.enableWatermark ? '启用' : '禁用'}, 类型: ${this.options.watermarkType}, 后端用户名水印: ${this.options.enableUsernameWatermark ? '启用' : '禁用'}`);
-      console.log(`WebP Optimizer: 用户选择 - 前端启用水印: ${userWantsWatermark ? '是' : '否'}, 主水印: ${shouldApplyMainWatermark ? '是' : '否'}, 用户名水印: ${shouldApplyUsernameWatermark ? '是' : '否'}${customOpacity ? `, 自定义透明度: ${customOpacity}%` : ''}`);
+      console.log(`WebP Optimizer: 用户选择 - 前端图片水印: ${userWantsImageWatermark ? '是' : '否'}, 前端用户名水印: ${userWantsUsernameWatermark ? '是' : '否'}, 实际主水印: ${shouldApplyMainWatermark ? '是' : '否'}, 实际用户名水印: ${shouldApplyUsernameWatermark ? '是' : '否'}${customOpacity ? `, 自定义透明度: ${customOpacity}%` : ''}`);
       
       // 1. 尺寸缩放
       if (shouldResize) {
@@ -971,7 +973,7 @@ class WebPOptimizer {
       
       // 2. 应用水印
       if (shouldApplyAnyWatermark) {
-        // 应用文字/图片水印（仅由后端配置控制）
+        // 应用文字/图片水印（前端启用或后端配置启用）
         if (shouldApplyMainWatermark) {
           if (this.options.watermarkType === 'text') {
             image = await this.applyTextWatermark(image, metadata, context);

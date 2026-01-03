@@ -27,6 +27,11 @@ const parseWatermarkFlag = (value) => value === true || value === 'true' || valu
 const parseWatermarkSettings = (body) => {
   const settings = {};
   
+  // 解析图片水印开关（前端控制）
+  if (body.imageWatermark !== undefined) {
+    settings.applyImageWatermark = parseWatermarkFlag(body.imageWatermark);
+  }
+  
   // 解析水印透明度（10-100）
   if (body.watermarkOpacity !== undefined) {
     const opacity = parseInt(body.watermarkOpacity, 10);
