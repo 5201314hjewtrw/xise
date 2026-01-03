@@ -17,6 +17,35 @@ const MAX_ALPHA = 255;         // Alpha通道最大值
 const DEFAULT_WATERMARK_PADDING = 20; // 水印默认边距（像素）
 
 /**
+ * 解析路径（相对路径转换为绝对路径）
+ * 独立函数，在类外部定义以避免构造函数中调用尚未定义的方法
+ * @param {string|null} inputPath - 输入路径
+ * @returns {string|null}
+ */
+function resolvePath(inputPath) {
+  if (!inputPath) {
+    return null;
+  }
+  
+  // 路径以 / 开头但不是以常见系统目录开头（如 /usr, /var, /etc, /opt, /home）
+  // 则视为相对于项目根目录的路径
+  const systemDirs = ['/usr', '/var', '/etc', '/opt', '/home', '/root', '/tmp', '/lib', '/bin', '/sbin'];
+  const isSystemPath = systemDirs.some(dir => inputPath.startsWith(dir + '/') || inputPath === dir);
+  
+  if (inputPath.startsWith('/') && !isSystemPath) {
+    // 以 / 开头但不是系统路径，移除开头的斜杠后与项目根目录拼接
+    return path.join(process.cwd(), inputPath.substring(1));
+  }
+  
+  // 如果不是绝对路径，也相对于项目根目录解析
+  if (!path.isAbsolute(inputPath)) {
+    return path.join(process.cwd(), inputPath);
+  }
+  
+  return inputPath;
+}
+
+/**
  * WebP优化器类
  */
 class WebPOptimizer {
@@ -51,8 +80,8 @@ class WebPOptimizer {
       watermarkType: webpConfig.watermark?.type || 'text', // 'text' 或 'image'
       watermarkText: webpConfig.watermark?.text || '',
       watermarkFontSize: webpConfig.watermark?.fontSize || 24,
-      watermarkFontPath: this.resolvePath(webpConfig.watermark?.fontPath),
-      watermarkImage: this.resolvePath(webpConfig.watermark?.imagePath),
+      watermarkFontPath: resolvePath(webpConfig.watermark?.fontPath),
+      watermarkImage: resolvePath(webpConfig.watermark?.imagePath),
       watermarkOpacity: webpConfig.watermark?.opacity || 50,
       watermarkPosition: webpConfig.watermark?.position || '9', // 九宫格位置，默认右下
       watermarkPositionMode: webpConfig.watermark?.positionMode || 'grid', // 'grid' 或 'precise'
@@ -64,7 +93,7 @@ class WebPOptimizer {
       // 用户名水印设置
       enableUsernameWatermark: webpConfig.usernameWatermark?.enabled || false,
       usernameWatermarkFontSize: webpConfig.usernameWatermark?.fontSize || 20,
-      usernameWatermarkFontPath: this.resolvePath(webpConfig.usernameWatermark?.fontPath),
+      usernameWatermarkFontPath: resolvePath(webpConfig.usernameWatermark?.fontPath),
       usernameWatermarkOpacity: webpConfig.usernameWatermark?.opacity || 70,
       usernameWatermarkPosition: webpConfig.usernameWatermark?.position || '7', // 默认左下
       usernameWatermarkPositionMode: webpConfig.usernameWatermark?.positionMode || 'grid',
@@ -76,30 +105,12 @@ class WebPOptimizer {
   }
 
   /**
-   * 解析路径（相对路径转换为绝对路径）
+   * 解析路径的实例方法（调用独立函数）
    * @param {string|null} inputPath - 输入路径
    * @returns {string|null}
    */
   resolvePath(inputPath) {
-    if (!inputPath) {
-      return null;
-    }
-    // 路径以 / 开头但不是以常见系统目录开头（如 /usr, /var, /etc, /opt, /home）
-    // 则视为相对于项目根目录的路径
-    const systemDirs = ['/usr', '/var', '/etc', '/opt', '/home', '/root', '/tmp', '/lib', '/bin', '/sbin'];
-    const isSystemPath = systemDirs.some(dir => inputPath.startsWith(dir + '/') || inputPath === dir);
-    
-    if (inputPath.startsWith('/') && !isSystemPath) {
-      // 以 / 开头但不是系统路径，视为相对于项目根目录
-      return path.join(process.cwd(), inputPath);
-    }
-    
-    // 如果不是绝对路径，也相对于项目根目录解析
-    if (!path.isAbsolute(inputPath)) {
-      return path.join(process.cwd(), inputPath);
-    }
-    
-    return inputPath;
+    return resolvePath(inputPath);
   }
 
   /**
