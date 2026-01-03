@@ -113,23 +113,23 @@ async function calculateChunkMD5(chunk) {
 }
 
 /**
- * 获取当前用户ID用于防止分片冲突
- * @returns {string} 用户ID
+ * 获取当前用户会话ID用于防止分片冲突
+ * 使用随机生成的会话ID而不是token哈希，避免敏感信息泄露
+ * @returns {string} 会话ID
  */
-function getUserId() {
-  try {
-    const token = localStorage.getItem('token') || localStorage.getItem('admin_token')
-    if (token) {
-      // 简单地从token中提取一部分作为用户标识
-      // 这里使用token的哈希值来确保唯一性
-      const spark = new SparkMD5()
-      spark.append(token)
-      return spark.end().substring(0, 8)
-    }
-  } catch (e) {
-    // ignore
+function getSessionId() {
+  const SESSION_KEY = 'upload_session_id'
+  let sessionId = sessionStorage.getItem(SESSION_KEY)
+  
+  if (!sessionId) {
+    // 生成随机的会话ID
+    const randomPart = Math.random().toString(36).substring(2, 10)
+    const timePart = Date.now().toString(36)
+    sessionId = `${randomPart}${timePart}`
+    sessionStorage.setItem(SESSION_KEY, sessionId)
   }
-  return 'anonymous'
+  
+  return sessionId
 }
 
 /**
@@ -146,8 +146,8 @@ async function uploadImageChunked(file, options = {}) {
     // 计算文件唯一标识符（包含用户ID防止冲突）
     console.log('📊 计算图片文件MD5...')
     const fileMD5 = await calculateFileMD5(file)
-    const userId = getUserId()
-    const identifier = `img_${userId}_${fileMD5}_${file.size}`
+    const sessionId = getSessionId()
+    const identifier = `img_${sessionId}_${fileMD5}_${file.size}`
     console.log(`📝 图片文件标识符: ${identifier}`)
     
     // 计算分片数量
