@@ -770,43 +770,128 @@ class WebPOptimizer {
       return image;
     }
     
-    console.log(`WebP Optimizer: 应用用户名水印 - 内容: "${text}", 字体大小: ${this.options.usernameWatermarkFontSize}, 位置: ${this.options.usernameWatermarkPosition}`);
-    
     const fontSize = this.options.usernameWatermarkFontSize;
     const opacity = this.options.usernameWatermarkOpacity;
     const color = this.options.usernameWatermarkColor;
     const fontPath = this.options.usernameWatermarkFontPath;
     
-    // 创建文字水印SVG（传入字体路径）
-    const svgBuffer = this.createTextWatermarkSvg(text, fontSize, color, opacity, fontPath);
+    console.log(`WebP Optimizer: 应用用户名水印 - 内容: "${text}", 字体大小: ${fontSize}, 透明度: ${opacity}%, 位置: ${this.options.usernameWatermarkPosition}`);
     
-    // 获取SVG尺寸估算（改进中文字符宽度计算）
-    const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
-    const otherChars = text.length - chineseChars;
-    const charWidth = fontSize * CHAR_WIDTH_RATIO;
-    const watermarkWidth = Math.ceil(chineseChars * fontSize + otherChars * charWidth) + 20;
-    const watermarkHeight = fontSize + 10;
-    
-    // 计算位置
-    const position = this.getWatermarkPosition(
-      this.options.usernameWatermarkPosition,
-      metadata.width,
-      metadata.height,
-      watermarkWidth,
-      watermarkHeight,
-      {
-        positionMode: this.options.usernameWatermarkPositionMode,
-        preciseX: this.options.usernameWatermarkPreciseX,
-        preciseY: this.options.usernameWatermarkPreciseY
+    try {
+      // 尝试使用sharp的text方法（适用于sharp 0.32.0+）
+      const hexColor = color.replace('#', '');
+      const r = parseInt(hexColor.substring(0, 2), 16);
+      const g = parseInt(hexColor.substring(2, 4), 16);
+      const b = parseInt(hexColor.substring(4, 6), 16);
+      
+      // 计算水印尺寸（估算）
+      const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+      const otherChars = text.length - chineseChars;
+      const charWidth = fontSize * CHAR_WIDTH_RATIO;
+      const watermarkWidth = Math.ceil(chineseChars * fontSize + otherChars * charWidth) + 20;
+      const watermarkHeight = fontSize + 10;
+      
+      // 计算位置
+      const position = this.getWatermarkPosition(
+        this.options.usernameWatermarkPosition,
+        metadata.width,
+        metadata.height,
+        watermarkWidth,
+        watermarkHeight,
+        {
+          positionMode: this.options.usernameWatermarkPositionMode,
+          preciseX: this.options.usernameWatermarkPreciseX,
+          preciseY: this.options.usernameWatermarkPreciseY
+        }
+      );
+      
+      // 先创建文字图层
+      const textBuffer = await sharp({
+        text: {
+          text: text,
+          font: fontPath && fs.existsSync(fontPath) ? undefined : 'sans-serif',
+          fontfile: fontPath && fs.existsSync(fontPath) ? fontPath : undefined,
+          rgba: true,
+          dpi: 300
+        }
+      })
+      .png()
+      .toBuffer();
+      
+      // 调整颜色和透明度
+      const textImage = sharp(textBuffer);
+      const textMeta = await textImage.metadata();
+      
+      // 应用颜色和透明度
+      let processedText = textImage;
+      
+      // 如果需要调整颜色或透明度
+      if (opacity < 100 || color !== '#000000') {
+        const { data, info } = await textImage.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        
+        // 修改颜色和透明度
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] > 0) { // 只处理非透明像素
+            data[i] = r;     // R
+            data[i + 1] = g; // G
+            data[i + 2] = b; // B
+            data[i + 3] = Math.round(data[i + 3] * (opacity / 100)); // A
+          }
+        }
+        
+        processedText = sharp(data, {
+          raw: {
+            width: info.width,
+            height: info.height,
+            channels: 4
+          }
+        });
       }
-    );
-    
-    // 应用水印
-    return image.composite([{
-      input: svgBuffer,
-      top: position.y,
-      left: position.x
-    }]);
+      
+      const processedBuffer = await processedText.png().toBuffer();
+      
+      // 应用水印
+      return image.composite([{
+        input: processedBuffer,
+        top: position.y,
+        left: position.x,
+        blend: 'over'
+      }]);
+      
+    } catch (error) {
+      console.warn(`WebP Optimizer: 用户名水印使用text方法失败，回退到SVG方法: ${error.message}`);
+      
+      // 回退到SVG方法
+      const svgBuffer = this.createTextWatermarkSvg(text, fontSize, color, opacity, fontPath);
+      
+      // 获取SVG尺寸估算
+      const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+      const otherChars = text.length - chineseChars;
+      const charWidth = fontSize * CHAR_WIDTH_RATIO;
+      const watermarkWidth = Math.ceil(chineseChars * fontSize + otherChars * charWidth) + 20;
+      const watermarkHeight = fontSize + 10;
+      
+      // 计算位置
+      const position = this.getWatermarkPosition(
+        this.options.usernameWatermarkPosition,
+        metadata.width,
+        metadata.height,
+        watermarkWidth,
+        watermarkHeight,
+        {
+          positionMode: this.options.usernameWatermarkPositionMode,
+          preciseX: this.options.usernameWatermarkPreciseX,
+          preciseY: this.options.usernameWatermarkPreciseY
+        }
+      );
+      
+      // 应用水印
+      return image.composite([{
+        input: svgBuffer,
+        top: position.y,
+        left: position.x
+      }]);
+    }
   }
 
   /**
