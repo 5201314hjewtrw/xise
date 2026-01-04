@@ -146,6 +146,15 @@
               <p class="post-text">
                 <ContentRenderer :text="postData.content" />
               </p>
+              <!-- 附件下载区域 -->
+              <div v-if="postData.attachment && postData.attachment.url" class="attachment-download">
+                <a :href="postData.attachment.url" :download="postData.attachment.name" target="_blank" class="attachment-link">
+                  <SvgIcon name="attachment" width="16" height="16" />
+                  <span class="attachment-name">{{ postData.attachment.name || '附件' }}</span>
+                  <span class="attachment-size">({{ formatAttachmentSize(postData.attachment.size) }})</span>
+                  <SvgIcon name="download" width="16" height="16" class="download-icon" />
+                </a>
+              </div>
               <div class="post-tags">
                 <span v-for="tag in postData.tags" :key="tag" class="tag clickable-tag" @click="handleTagClick(tag)">#{{
                   tag }}</span>
@@ -657,10 +666,20 @@ const postData = computed(() => {
           []) :
         []),
     time: formatTime(props.item.originalData?.createdAt || props.item.created_at || props.item.time),
-    location: props.item.location || ''
+    location: props.item.location || '',
+    attachment: props.item.attachment || null
   }
   return data
 })
+
+// 格式化附件大小
+const formatAttachmentSize = (bytes) => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
 
 const imageList = computed(() => {
   if (props.item.originalData?.images && Array.isArray(props.item.originalData.images) && props.item.originalData.images.length > 0) {
@@ -3060,6 +3079,46 @@ function handleAvatarError(event) {
   word-wrap: break-word;
   word-break: break-all;
   overflow-wrap: break-word;
+}
+
+/* 附件下载样式 */
+.attachment-download {
+  margin: 12px 0;
+  padding: 10px 14px;
+  background: var(--bg-color-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color-primary);
+}
+
+.attachment-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text-color-primary);
+  transition: all 0.2s ease;
+}
+
+.attachment-link:hover {
+  color: var(--primary-color);
+}
+
+.attachment-link .attachment-name {
+  font-size: 14px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-link .attachment-size {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+}
+
+.attachment-link .download-icon {
+  color: var(--primary-color);
+  flex-shrink: 0;
 }
 
 .post-tags {
