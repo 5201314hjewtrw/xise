@@ -92,9 +92,24 @@
               <button type="button" class="emoji-btn" @click="toggleEmojiPanel">
                 <SvgIcon name="emoji" class="emoji-icon" width="20" height="20" />
               </button>
+              <button type="button" class="attachment-btn" @click="openAttachmentModal">
+                <SvgIcon name="attachment" class="attachment-icon" width="20" height="20" />
+              </button>
             </div>
           </div>
           <div class="char-count">{{ form.content.length }}/2000</div>
+
+          <!-- 附件预览 -->
+          <div v-if="form.attachment" class="attachment-preview">
+            <div class="attachment-info">
+              <SvgIcon name="attachment" width="16" height="16" />
+              <span class="attachment-name">{{ form.attachment.name }}</span>
+              <span class="attachment-size">({{ formatAttachmentSize(form.attachment.size) }})</span>
+            </div>
+            <button type="button" class="remove-attachment-btn" @click="removeAttachment">
+              <SvgIcon name="close" width="14" height="14" />
+            </button>
+          </div>
 
           <div v-if="showEmojiPanel" class="emoji-panel-overlay" v-click-outside="closeEmojiPanel">
             <div class="emoji-panel" @click.stop>
@@ -131,6 +146,15 @@
 
     <!-- 文字配图模态框 -->
     <TextImageModal :visible="showTextImageModal" @close="closeTextImageModal" @generate="handleTextImageGenerate" />
+
+    <!-- 附件上传模态框 -->
+    <AttachmentUploadModal 
+      v-model:visible="showAttachmentModal" 
+      :modelValue="form.attachment"
+      @update:modelValue="form.attachment = $event"
+      @confirm="handleAttachmentConfirm"
+      @close="closeAttachmentModal"
+    />
   </div>
 </template>
 
@@ -155,6 +179,7 @@ import EmojiPicker from '@/components/EmojiPicker.vue'
 import MentionModal from '@/components/mention/MentionModal.vue'
 import ContentEditableInput from '@/components/ContentEditableInput.vue'
 import TextImageModal from '@/views/publish/components/TextImageModal.vue'
+import AttachmentUploadModal from '@/components/AttachmentUploadModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -176,6 +201,7 @@ const showEmojiPanel = ref(false)
 const showMentionPanel = ref(false)
 const isContentFocused = ref(false)
 const showTextImageModal = ref(false)
+const showAttachmentModal = ref(false)
 
 const showToast = ref(false)
 const toastMessage = ref('')
@@ -187,7 +213,8 @@ const form = reactive({
   images: [],
   video: null,
   tags: [],
-  category_id: null
+  category_id: null,
+  attachment: null
 })
 
 // 草稿相关状态
@@ -359,6 +386,34 @@ const handleTextImageGenerate = async (data) => {
   }
   
   closeTextImageModal()
+}
+
+// 附件相关函数
+const openAttachmentModal = () => {
+  showAttachmentModal.value = true
+  lock()
+}
+
+const closeAttachmentModal = () => {
+  showAttachmentModal.value = false
+  unlock()
+}
+
+const handleAttachmentConfirm = (attachmentData) => {
+  form.attachment = attachmentData
+  closeAttachmentModal()
+}
+
+const removeAttachment = () => {
+  form.attachment = null
+}
+
+const formatAttachmentSize = (bytes) => {
+  if (!bytes || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 const handleCategoryChange = (data) => {
@@ -606,7 +661,8 @@ const handlePublish = async () => {
       tags: form.tags,
       category_id: form.category_id,
       type: uploadType.value === 'image' ? 1 : 2, // 1: 图文, 2: 视频
-      is_draft: false // 发布状态
+      is_draft: false, // 发布状态
+      attachment: form.attachment || null
     }
 
 
@@ -656,6 +712,7 @@ const resetForm = () => {
   form.video = null
   form.tags = []
   form.category_id = null
+  form.attachment = null
   
   if (multiImageUploadRef.value) {
     multiImageUploadRef.value.reset()
@@ -690,6 +747,13 @@ const loadDraftData = async (draftId) => {
         }
       } else {
         form.video = draft.video || null
+      }
+
+      // 设置附件数据
+      if (fullData.attachment) {
+        form.attachment = fullData.attachment
+      } else {
+        form.attachment = null
       }
 
       // 处理标签数据：确保转换为字符串数组
@@ -851,7 +915,8 @@ const handleSaveDraft = async () => {
       tags: form.tags || [],
       category_id: form.category_id || null,
       type: uploadType.value === 'image' ? 1 : 2, // 1: 图文, 2: 视频
-      is_draft: true
+      is_draft: true,
+      attachment: form.attachment || null
     }
 
     showMessage('正在保存草稿...', 'info')
@@ -1174,7 +1239,8 @@ const handleSaveDraft = async () => {
 }
 
 .emoji-btn,
-.mention-btn {
+.mention-btn,
+.attachment-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1189,15 +1255,71 @@ const handleSaveDraft = async () => {
 }
 
 .emoji-btn:hover,
-.mention-btn:hover {
+.mention-btn:hover,
+.attachment-btn:hover {
   background: var(--bg-color-secondary);
   color: var(--text-color-primary);
 }
 
 .emoji-icon,
-.mention-icon {
+.mention-icon,
+.attachment-icon {
   width: 20px;
   height: 20px;
+}
+
+/* 附件预览样式 */
+.attachment-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-top: 8px;
+  background: var(--bg-color-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border-color-primary);
+}
+
+.attachment-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-color-secondary);
+  overflow: hidden;
+}
+
+.attachment-name {
+  font-size: 13px;
+  color: var(--text-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.attachment-size {
+  font-size: 12px;
+  color: var(--text-color-tertiary);
+}
+
+.remove-attachment-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-color-tertiary);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.remove-attachment-btn:hover {
+  background: var(--danger-color);
+  color: white;
 }
 
 .emoji-panel-overlay {

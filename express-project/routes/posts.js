@@ -548,6 +548,21 @@ router.get('/:id', optionalAuth, async (req, res) => {
     );
     post.tags = tags;
 
+    // 获取附件信息
+    const [attachments] = await pool.execute(
+      'SELECT id, attachment_url, filename, filesize, created_at FROM post_attachments WHERE post_id = ?',
+      [postId]
+    );
+    if (attachments.length > 0) {
+      post.attachment = {
+        url: attachments[0].attachment_url,
+        name: attachments[0].filename,
+        size: attachments[0].filesize
+      };
+    } else {
+      post.attachment = null;
+    }
+
     // 检查当前用户是否已点赞和收藏（仅在用户已登录时检查）
     if (currentUserId) {
       const [likeResult] = await pool.execute(
@@ -590,7 +605,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 // 创建笔记
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { title, content, category_id, images, video, tags, is_draft, type } = req.body;
+    const { title, content, category_id, images, video, tags, is_draft, type, attachment } = req.body;
     const userId = req.user.id;
     const postType = type || 1; // 默认为图文类型
 
@@ -603,6 +618,7 @@ router.post('/', authenticateToken, async (req, res) => {
     console.log('是否草稿:', is_draft);
     console.log('图片数量:', images ? images.length : 0);
     console.log('视频数据:', video ? JSON.stringify(video) : 'null');
+    console.log('附件数据:', attachment ? JSON.stringify(attachment) : 'null');
     console.log('标签:', tags);
 
     // 验证必填字段：发布时要求标题和内容，草稿时不强制要求
@@ -682,6 +698,20 @@ router.post('/', authenticateToken, async (req, res) => {
         [postId.toString(), video.url, coverUrl]
       );
       console.log('✅ 视频记录插入成功');
+    }
+
+    // 处理附件
+    if (attachment && attachment.url && typeof attachment.url === 'string') {
+      console.log('📎 开始处理附件数据...');
+      console.log('附件URL:', attachment.url);
+      console.log('附件名称:', attachment.name);
+      console.log('附件大小:', attachment.size);
+
+      await pool.execute(
+        'INSERT INTO post_attachments (post_id, attachment_url, filename, filesize) VALUES (?, ?, ?, ?)',
+        [postId.toString(), attachment.url, attachment.name || 'attachment', attachment.size || 0]
+      );
+      console.log('✅ 附件记录插入成功');
     }
 
     // 处理标签
@@ -982,7 +1012,7 @@ router.post('/:id/collect', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const postId = req.params.id;
-    const { title, content, category_id, images, video, tags, is_draft } = req.body;
+    const { title, content, category_id, images, video, tags, is_draft, attachment } = req.body;
     const userId = req.user.id;
 
     // 验证必填字段：如果不是草稿（is_draft=0），则要求标题、内容和分类不能为空
@@ -1096,6 +1126,22 @@ router.put('/:id', authenticateToken, async (req, res) => {
             [postId, imageUrl]
           );
         }
+      }
+    }
+
+    // 处理附件更新
+    if (attachment !== undefined) {
+      // 删除原有附件记录
+      await pool.execute('DELETE FROM post_attachments WHERE post_id = ?', [postId.toString()]);
+      
+      // 如果有新附件，插入记录
+      if (attachment && attachment.url && typeof attachment.url === 'string') {
+        console.log('📎 更新附件数据...');
+        await pool.execute(
+          'INSERT INTO post_attachments (post_id, attachment_url, filename, filesize) VALUES (?, ?, ?, ?)',
+          [postId.toString(), attachment.url, attachment.name || 'attachment', attachment.size || 0]
+        );
+        console.log('✅ 附件记录更新成功');
       }
     }
 
