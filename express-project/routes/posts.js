@@ -1,12 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES, PAID_CONTENT } = require('../constants');
+const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
 const { pool } = require('../config/config');
 const { optionalAuth, authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const { extractMentionedUsers, hasMentions } = require('../utils/mentionParser');
 const { batchCleanupFiles } = require('../utils/fileCleanup');
 const { sanitizeContent } = require('../utils/contentSecurity');
+const { 
+  isPaidContent, 
+  shouldProtectContent, 
+  getFreePreviewCount, 
+  protectPostListItem,
+  protectPostDetail 
+} = require('../utils/paidContentHelper');
 
 // 获取笔记列表
 router.get('/', optionalAuth, async (req, res) => {
@@ -278,35 +285,19 @@ router.get('/', optionalAuth, async (req, res) => {
       
       // 为每个笔记填充数据
       for (let post of rows) {
-        // 判断是否需要保护付费内容
+        // 使用助手函数处理付费内容保护
         const paymentSetting = paymentSettingsByPostId[post.id];
-        const isPaidContent = paymentSetting && paymentSetting.enabled === 1;
         const isAuthor = currentUserId && post.user_id === currentUserId;
         const hasPurchased = purchasedPostIds.has(post.id);
-        const shouldProtectContent = isPaidContent && !isAuthor && !hasPurchased;
-        const freePreviewCount = isPaidContent ? (paymentSetting.free_preview_count || 0) : 0;
         
-        // 根据笔记类型获取图片或视频封面
-        if (post.type === 2) {
-          // 视频笔记
-          const video = videosByPostId[post.id];
-          post.images = video && video.cover_url ? [video.cover_url] : [];
-          // 保护付费视频：不返回video_url
-          post.video_url = shouldProtectContent ? null : (video ? video.video_url : null);
-          post.image = video && video.cover_url ? video.cover_url : null;
-        } else {
-          // 图文笔记
-          let images = imagesByPostId[post.id] || [];
-          // 保护付费图片：限制为免费预览数量
-          if (shouldProtectContent && images.length > freePreviewCount) {
-            images = images.slice(0, freePreviewCount);
-          }
-          post.images = images;
-          post.image = images.length > 0 ? images[0] : null;
-        }
+        protectPostListItem(post, {
+          paymentSetting,
+          isAuthor,
+          hasPurchased,
+          videoData: videosByPostId[post.id],
+          imageUrls: imagesByPostId[post.id]
+        });
         
-        // 标记是否为付费内容
-        post.isPaidContent = isPaidContent;
         post.tags = tagsByPostId[post.id] || [];
         post.liked = likedPostIds.has(post.id);
         post.collected = collectedPostIds.has(post.id);
@@ -541,35 +532,22 @@ router.get('/following', authenticateToken, async (req, res) => {
 
       // 为每个笔记填充数据
       for (let post of rows) {
-        // 判断是否需要保护付费内容
+        // 使用助手函数处理付费内容保护
         const paymentSetting = paymentSettingsByPostId[post.id];
-        const isPaidContent = paymentSetting && paymentSetting.enabled === 1;
         const isAuthor = post.user_id === currentUserId;
         const hasPurchased = purchasedPostIds.has(post.id);
-        const shouldProtectContent = isPaidContent && !isAuthor && !hasPurchased;
-        const freePreviewCount = isPaidContent ? (paymentSetting.free_preview_count || 0) : 0;
         
-        if (post.type === 2) {
-          // 视频笔记
-          const video = videosByPostId[post.id];
-          post.images = video && video.cover_url ? [video.cover_url] : [];
-          // 保护付费视频：不返回video_url
-          post.video_url = shouldProtectContent ? null : (video ? video.video_url : null);
-          post.image = video && video.cover_url ? video.cover_url : null;
-        } else {
-          // 图文笔记
-          let images = imagesByPostId[post.id] || [];
-          // 保护付费图片：限制为免费预览数量
-          if (shouldProtectContent && images.length > freePreviewCount) {
-            images = images.slice(0, freePreviewCount);
-          }
-          post.images = images;
-          post.image = images.length > 0 ? images[0] : null;
-        }
+        protectPostListItem(post, {
+          paymentSetting,
+          isAuthor,
+          hasPurchased,
+          videoData: videosByPostId[post.id],
+          imageUrls: imagesByPostId[post.id]
+        });
+        
         post.tags = tagsByPostId[post.id] || [];
         post.liked = likedPostIds.has(post.id);
         post.collected = collectedPostIds.has(post.id);
-        post.isPaidContent = isPaidContent;
       }
     }
 
@@ -698,32 +676,11 @@ router.get('/:id', optionalAuth, async (req, res) => {
     
     post.hasPurchased = hasPurchased;
 
-    // 保护付费内容：如果是付费内容且用户未购买且不是作者，隐藏付费部分
+    // 保护付费内容：如果是付费内容且用户未购买且不是作者，使用助手函数隐藏付费部分
     if (post.paymentSettings && post.paymentSettings.enabled && !hasPurchased && !isAuthor) {
-      const freePreviewCount = post.paymentSettings.freePreviewCount || 0;
-      
-      // 限制图片数量为免费预览数量
-      if (post.images && post.images.length > freePreviewCount) {
-        post.images = post.images.slice(0, freePreviewCount);
-      }
-      
-      // 隐藏视频URL（只保留封面图用于预览）
-      if (post.type === 2) {
-        post.video_url = null;
-        if (post.videos) {
-          post.videos = post.videos.map(v => ({ cover_url: v.cover_url, video_url: null }));
-        }
-      }
-      
-      // 隐藏附件
-      post.attachment = null;
-      
-      // 截断内容文本（使用常量定义的预览长度）
-      if (post.content && post.content.length > PAID_CONTENT.CONTENT_PREVIEW_LENGTH) {
-        post.content = post.content.substring(0, PAID_CONTENT.CONTENT_PREVIEW_LENGTH) + '...';
-        post.contentTruncated = true;
-      }
-      
+      protectPostDetail(post, {
+        freePreviewCount: post.paymentSettings.freePreviewCount || 0
+      });
       console.log(`🔒 [帖子详情] 付费内容已保护 - 帖子ID: ${postId}, 用户ID: ${currentUserId || '未登录'}`);
     }
 
@@ -1064,24 +1021,19 @@ router.get('/search', optionalAuth, async (req, res) => {
       
       // 为每个笔记填充数据
       for (let post of rows) {
-        // 判断是否需要保护付费内容
+        // 使用助手函数处理付费内容保护（搜索不返回视频URL）
         const paymentSetting = paymentSettingsByPostId[post.id];
-        const isPaidContent = paymentSetting && paymentSetting.enabled === 1;
         const isAuthor = currentUserId && post.user_id === currentUserId;
         const hasPurchased = purchasedPostIds.has(post.id);
-        const shouldProtectContent = isPaidContent && !isAuthor && !hasPurchased;
-        const freePreviewCount = isPaidContent ? (paymentSetting.free_preview_count || 0) : 0;
         
-        // 获取笔记图片
-        let images = imagesByPostId[post.id] || [];
-        // 保护付费图片：限制为免费预览数量
-        if (shouldProtectContent && images.length > freePreviewCount) {
-          images = images.slice(0, freePreviewCount);
-        }
-        post.images = images;
+        protectPostListItem(post, {
+          paymentSetting,
+          isAuthor,
+          hasPurchased,
+          videoData: null, // 搜索结果不包含视频数据
+          imageUrls: imagesByPostId[post.id]
+        });
         
-        // 标记是否为付费内容
-        post.isPaidContent = isPaidContent;
         post.tags = tagsByPostId[post.id] || [];
         post.liked = likedPostIds.has(post.id);
         post.collected = collectedPostIds.has(post.id);
