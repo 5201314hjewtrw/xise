@@ -43,6 +43,9 @@ function transformPostData(backendPost) {
     author_verified: backendPost.verified || 0,
     // 附件字段
     attachment: backendPost.attachment || null,
+    // 付费设置字段
+    paymentSettings: backendPost.paymentSettings || null,
+    hasPurchased: backendPost.hasPurchased || false,
     // 其他字段
     created_at: backendPost.created_at,
     path: `/post/${backendPost.id}`,
@@ -57,7 +60,8 @@ function transformPostData(backendPost) {
       images: backendPost.images || [],
       tags: backendPost.tags || [],
       createdAt: backendPost.created_at,
-      userId: backendPost.user_id
+      userId: backendPost.user_id,
+      paymentSettings: backendPost.paymentSettings || null
     }
   }
 
