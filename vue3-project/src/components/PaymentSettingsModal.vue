@@ -71,9 +71,12 @@
           <div class="setting-item" v-if="mediaCount > 0">
             <div class="setting-label">
               <span class="label-text">免费预览</span>
-              <span class="label-hint">用户可以免费查看的{{ mediaType === 'image' ? '图片' : '视频' }}数量</span>
+              <span class="label-hint" v-if="mediaType === 'image'">
+                点击上传区域的图片切换免费/付费状态，当前 {{ freeImagesCount }} 张免费，{{ paidImagesCount }} 张付费
+              </span>
+              <span class="label-hint" v-else>用户可以免费查看的视频数量</span>
             </div>
-            <div class="free-preview-wrapper">
+            <div class="free-preview-wrapper" v-if="mediaType !== 'image'">
               <input 
                 type="number" 
                 v-model.number="localSettings.freePreviewCount" 
@@ -82,7 +85,11 @@
                 step="1"
                 class="free-preview-input"
               />
-              <span class="free-preview-hint">/ {{ mediaCount }} {{ mediaType === 'image' ? '张' : '个' }}</span>
+              <span class="free-preview-hint">/ {{ mediaCount }} 个</span>
+            </div>
+            <div v-else class="free-preview-info">
+              <span class="free-count">👁 {{ freeImagesCount }} 张免费</span>
+              <span class="paid-count">🔒 {{ paidImagesCount }} 张付费</span>
             </div>
           </div>
 
@@ -141,6 +148,14 @@ const props = defineProps({
   mediaType: {
     type: String,
     default: 'image' // 'image' or 'video'
+  },
+  freeImagesCount: {
+    type: Number,
+    default: 0
+  },
+  paidImagesCount: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -418,6 +433,25 @@ const handleConfirm = () => {
 .free-preview-hint {
   font-size: 14px;
   color: var(--text-color-tertiary);
+}
+
+/* Free Preview Info (for images) */
+.free-preview-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.free-count {
+  font-size: 14px;
+  color: #2ecc71;
+  font-weight: 500;
+}
+
+.paid-count {
+  font-size: 14px;
+  color: #ff4757;
+  font-weight: 500;
 }
 
 /* Payment Note */

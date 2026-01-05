@@ -597,13 +597,32 @@ const visibleImageList = computed(() => {
   if (!showPaymentOverlay.value) {
     return allImages
   }
-  // 付费内容只显示免费预览数量的图片
+  
+  // 检查图片是否有 isFreePreview 属性（新格式）
+  const imagesWithFreePreviewProp = props.item.images?.filter(img => typeof img === 'object' && img.isFreePreview !== undefined)
+  if (imagesWithFreePreviewProp && imagesWithFreePreviewProp.length > 0) {
+    // 使用 isFreePreview 属性过滤，只显示标记为免费的图片
+    return allImages.filter((url, index) => {
+      const imgData = props.item.images?.[index]
+      return imgData && typeof imgData === 'object' && imgData.isFreePreview
+    })
+  }
+  
+  // 旧格式：使用 freePreviewCount
   return allImages.slice(0, freePreviewCount.value)
 })
 
 // 被隐藏的图片数量
 const hiddenImageCount = computed(() => {
   if (!showPaymentOverlay.value) return 0
+  
+  // 检查图片是否有 isFreePreview 属性
+  const imagesWithFreePreviewProp = props.item.images?.filter(img => typeof img === 'object' && img.isFreePreview !== undefined)
+  if (imagesWithFreePreviewProp && imagesWithFreePreviewProp.length > 0) {
+    const paidCount = props.item.images.filter(img => typeof img === 'object' && !img.isFreePreview).length
+    return paidCount
+  }
+  
   return Math.max(0, imageList.value.length - freePreviewCount.value)
 })
 

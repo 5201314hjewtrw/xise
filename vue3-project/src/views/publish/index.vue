@@ -56,6 +56,7 @@
               v-model="form.images" 
               :max-images="9" 
               :allow-delete-last="true"
+              :payment-enabled="form.paymentSettings.enabled"
               @error="handleUploadError" 
             />
             <VideoUpload 
@@ -178,6 +179,8 @@
       v-model="form.paymentSettings"
       :mediaCount="mediaCount"
       :mediaType="uploadType"
+      :freeImagesCount="freeImagesCount"
+      :paidImagesCount="paidImagesCount"
       @confirm="handlePaymentConfirm"
       @close="closePaymentModal"
     />
@@ -316,6 +319,22 @@ const mediaCount = computed(() => {
       return videoData && (videoData.uploaded || videoData.file) ? 1 : 0
     }
     return form.video ? 1 : 0
+  }
+  return 0
+})
+
+// 免费预览图片数量
+const freeImagesCount = computed(() => {
+  if (uploadType.value === 'image' && form.images && form.images.length > 0) {
+    return form.images.filter(img => img.isFreePreview).length
+  }
+  return 0
+})
+
+// 付费图片数量
+const paidImagesCount = computed(() => {
+  if (uploadType.value === 'image' && form.images && form.images.length > 0) {
+    return form.images.filter(img => !img.isFreePreview).length
   }
   return 0
 })
