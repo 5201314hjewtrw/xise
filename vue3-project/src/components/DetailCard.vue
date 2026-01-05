@@ -146,8 +146,8 @@
               <p class="post-text">
                 <ContentRenderer :text="postData.content" />
               </p>
-              <!-- 附件下载区域 -->
-              <div v-if="postData.attachment && postData.attachment.url" class="attachment-download">
+              <!-- 附件下载区域 - 付费内容时隐藏 -->
+              <div v-if="postData.attachment && postData.attachment.url && !showPaymentOverlay" class="attachment-download">
                 <a :href="postData.attachment.url" :download="postData.attachment.name" target="_blank" class="attachment-link">
                   <SvgIcon name="attachment" width="16" height="16" />
                   <span class="attachment-name">{{ postData.attachment.name || '附件' }}</span>
@@ -155,6 +155,34 @@
                   <SvgIcon name="download" width="16" height="16" class="download-icon" />
                 </a>
               </div>
+              
+              <!-- 付费内容解锁区域 -->
+              <div v-if="showPaymentOverlay" class="payment-overlay">
+                <div class="payment-overlay-content">
+                  <div class="payment-lock-icon">🔒</div>
+                  <div class="payment-info">
+                    <div class="payment-title">付费内容</div>
+                    <div class="payment-description">
+                      <template v-if="hiddenImageCount > 0">
+                        还有 {{ hiddenImageCount }} {{ props.item.type === 2 ? '个视频' : '张图片' }}需要解锁
+                      </template>
+                      <template v-else>
+                        解锁后查看完整内容
+                      </template>
+                    </div>
+                    <div class="payment-price">
+                      <span class="price-icon">🍒</span>
+                      <span class="price-value">{{ paymentSettings?.price || 0 }}</span>
+                      <span class="price-unit">石榴点</span>
+                    </div>
+                  </div>
+                  <button class="unlock-btn" @click="handleUnlockContent" :disabled="isUnlocking">
+                    <template v-if="isUnlocking">解锁中...</template>
+                    <template v-else>立即解锁</template>
+                  </button>
+                </div>
+              </div>
+              
               <div class="post-tags">
                 <span v-for="tag in postData.tags" :key="tag" class="tag clickable-tag" @click="handleTagClick(tag)">#{{
                   tag }}</span>
@@ -528,6 +556,56 @@ const likeButtonRef = ref(null)
 const isAnimating = ref(true)
 const showContent = ref(false) // 新增：控制内容显示
 const isClosing = ref(false) // 新增：控制关闭动画状态
+
+// 付费设置相关状态
+const isUnlocking = ref(false) // 解锁中状态
+
+// 检测是否有付费设置
+const paymentSettings = computed(() => {
+  return props.item.paymentSettings || props.item.originalData?.paymentSettings || null
+})
+
+// 是否为付费内容
+const isPaidContent = computed(() => {
+  return paymentSettings.value && paymentSettings.value.enabled && paymentSettings.value.price > 0
+})
+
+// 是否已购买（TODO: 从后端获取用户购买状态）
+const hasPurchased = computed(() => {
+  // 如果是作者自己，视为已购买
+  if (isCurrentUserPost.value) {
+    return true
+  }
+  // TODO: 实际应该从后端API获取用户是否已购买此内容
+  return props.item.hasPurchased || false
+})
+
+// 是否需要显示付费遮挡
+const showPaymentOverlay = computed(() => {
+  return isPaidContent.value && !hasPurchased.value
+})
+
+// 免费预览数量
+const freePreviewCount = computed(() => {
+  if (!paymentSettings.value) return 0
+  return paymentSettings.value.freePreviewCount || 0
+})
+
+// 可显示的图片列表（根据付费设置过滤）
+const visibleImageList = computed(() => {
+  const allImages = imageList.value
+  if (!showPaymentOverlay.value) {
+    return allImages
+  }
+  // 付费内容只显示免费预览数量的图片
+  return allImages.slice(0, freePreviewCount.value)
+})
+
+// 被隐藏的图片数量
+const hiddenImageCount = computed(() => {
+  if (!showPaymentOverlay.value) return 0
+  return Math.max(0, imageList.value.length - freePreviewCount.value)
+})
 
 // 移动端检测
 const isMobile = computed(() => windowWidth.value <= 768)
@@ -1182,6 +1260,44 @@ const toggleCollect = async () => {
   } catch (error) {
     console.error('收藏操作失败:', error)
     showMessage('操作失败，请重试', 'error')
+  }
+}
+
+// 解锁付费内容
+const handleUnlockContent = async () => {
+  // 检查用户是否已登录
+  if (!userStore.isLoggedIn) {
+    authStore.openLoginModal()
+    return
+  }
+
+  if (!isPaidContent.value || isUnlocking.value) {
+    return
+  }
+
+  isUnlocking.value = true
+
+  try {
+    // TODO: 调用后端API进行付费解锁
+    // const result = await postApi.unlockPaidContent(props.item.id)
+    
+    // 暂时显示提示信息
+    showMessage(`需要支付 ${paymentSettings.value.price} 石榴点解锁此内容`, 'info')
+    
+    // 成功后刷新页面数据以获取完整内容
+    // if (result.success) {
+    //   showMessage('解锁成功！', 'success')
+    //   // 重新获取帖子数据
+    //   const postData = await getPostDetail(props.item.id)
+    //   if (postData) {
+    //     Object.assign(props.item, postData)
+    //   }
+    // }
+  } catch (error) {
+    console.error('解锁失败:', error)
+    showMessage('解锁失败，请重试', 'error')
+  } finally {
+    isUnlocking.value = false
   }
 }
 
@@ -3119,6 +3235,91 @@ function handleAvatarError(event) {
 .attachment-link .download-icon {
   color: var(--primary-color);
   flex-shrink: 0;
+}
+
+/* 付费内容解锁区域样式 */
+.payment-overlay {
+  margin: 16px 0;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05), rgba(var(--primary-color-rgb), 0.1));
+  border-radius: 12px;
+  border: 1px solid rgba(var(--primary-color-rgb), 0.2);
+}
+
+.payment-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.payment-lock-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.payment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.payment-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-color-primary);
+}
+
+.payment-description {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+}
+
+.payment-price {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.price-icon {
+  font-size: 18px;
+}
+
+.price-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.price-unit {
+  font-size: 14px;
+  color: var(--text-color-secondary);
+}
+
+.unlock-btn {
+  background: var(--primary-color);
+  border: none;
+  color: white;
+  padding: 12px 32px;
+  border-radius: 24px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.unlock-btn:hover:not(:disabled) {
+  background: var(--primary-color-dark);
+  transform: translateY(-1px);
+}
+
+.unlock-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .post-tags {
