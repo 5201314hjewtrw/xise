@@ -709,6 +709,23 @@ const handleAnimationEnd = (event) => {
 
 // 组件挂载时延迟显示内容
 onMounted(() => {
+  // 输出付费设置信息到控制台（调试用）
+  console.log('📦 [DetailCard] 笔记数据:', {
+    id: props.item.id,
+    title: props.item.title,
+    paymentSettings: props.item.paymentSettings,
+    originalDataPaymentSettings: props.item.originalData?.paymentSettings,
+    hasPurchased: props.item.hasPurchased,
+    isCurrentUserPost: isCurrentUserPost.value
+  })
+  console.log('💰 [DetailCard] 付费状态计算结果:', {
+    paymentSettings: paymentSettings.value,
+    isPaidContent: isPaidContent.value,
+    hasPurchased: hasPurchased.value,
+    showPaymentOverlay: showPaymentOverlay.value,
+    freePreviewCount: freePreviewCount.value
+  })
+  
   // 动画期间不显示复杂内容，减少渲染压力
   setTimeout(() => {
     if (!showContent.value) {

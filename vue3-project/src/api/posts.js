@@ -5,6 +5,13 @@ import { hasViewedPost, markPostAsViewed } from '@/utils/viewTracker.js'
 
 // 转换后端数据格式为前端瀑布流需要的格式
 function transformPostData(backendPost) {
+  // 输出后端返回的付费设置数据（调试用）
+  if (backendPost.paymentSettings) {
+    console.log('🔄 [transformPostData] 后端付费设置:', {
+      postId: backendPost.id,
+      paymentSettings: backendPost.paymentSettings
+    })
+  }
 
   const likeCount = backendPost.like_count || 0
   const liked = backendPost.liked || false
