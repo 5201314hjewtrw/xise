@@ -512,7 +512,7 @@ import { useFollowStore } from '@/stores/follow.js'
 import { useAuthStore } from '@/stores/auth'
 import { useCommentStore } from '@/stores/comment'
 import { useCommentLikeStore } from '@/stores/commentLike'
-import { commentApi, userApi, postApi, imageUploadApi } from '@/api/index.js'
+import { commentApi, userApi, postApi, imageUploadApi, balanceApi } from '@/api/index.js'
 import { getPostDetail } from '@/api/posts.js'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { formatTime } from '@/utils/timeFormat'
@@ -1369,39 +1369,60 @@ const toggleCollect = async () => {
 
 // 解锁付费内容
 const handleUnlockContent = async () => {
+  console.log('🔓 [解锁内容] 开始解锁流程...')
+  console.log('📋 [解锁内容] 帖子ID:', props.item.id)
+  console.log('💰 [解锁内容] 付费设置:', paymentSettings.value)
+  
   // 检查用户是否已登录
   if (!userStore.isLoggedIn) {
+    console.log('⚠️ [解锁内容] 用户未登录，打开登录弹窗')
     authStore.openLoginModal()
     return
   }
 
   if (!isPaidContent.value || isUnlocking.value) {
+    console.log('⚠️ [解锁内容] 非付费内容或正在解锁中')
     return
   }
 
   isUnlocking.value = true
+  console.log('🔄 [解锁内容] 正在处理...')
 
   try {
-    // TODO: 调用后端API进行付费解锁
-    // const result = await postApi.unlockPaidContent(props.item.id)
+    // 调用后端API进行付费解锁
+    const result = await balanceApi.purchaseContent(props.item.id)
+    console.log('📦 [解锁内容] API返回结果:', result)
     
-    // 暂时显示提示信息
-    showMessage(`需要支付 ${paymentSettings.value.price} 石榴点解锁此内容`, 'info')
-    
-    // 成功后刷新页面数据以获取完整内容
-    // if (result.success) {
-    //   showMessage('解锁成功！', 'success')
-    //   // 重新获取帖子数据
-    //   const postData = await getPostDetail(props.item.id)
-    //   if (postData) {
-    //     Object.assign(props.item, postData)
-    //   }
-    // }
+    if (result.success || result.code === 200) {
+      if (result.data?.alreadyPurchased) {
+        console.log('✅ [解锁内容] 已经购买过此内容')
+        showMessage('您已经购买过此内容，刷新页面查看', 'info')
+      } else {
+        console.log('🎉 [解锁内容] 购买成功！')
+        console.log('💎 [解锁内容] 剩余石榴点:', result.data?.newPoints)
+        showMessage(`购买成功！消费 ${result.data?.price || paymentSettings.value.price} 石榴点`, 'success')
+      }
+      
+      // 成功后刷新页面数据以获取完整内容
+      console.log('🔄 [解锁内容] 正在刷新帖子数据...')
+      const postData = await getPostDetail(props.item.id)
+      if (postData) {
+        console.log('✅ [解锁内容] 帖子数据已刷新:', postData.paymentSettings)
+        // 更新item的hasPurchased状态
+        props.item.hasPurchased = true
+        // 触发组件更新
+        Object.assign(props.item, postData)
+      }
+    } else {
+      console.log('❌ [解锁内容] 购买失败:', result.message)
+      showMessage(result.message || '购买失败，请重试', 'error')
+    }
   } catch (error) {
-    console.error('解锁失败:', error)
-    showMessage('解锁失败，请重试', 'error')
+    console.error('❌ [解锁内容] 发生错误:', error)
+    showMessage(error.message || '解锁失败，请重试', 'error')
   } finally {
     isUnlocking.value = false
+    console.log('🏁 [解锁内容] 流程结束')
   }
 }
 

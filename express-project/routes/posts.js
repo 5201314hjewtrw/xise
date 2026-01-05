@@ -579,6 +579,18 @@ router.get('/:id', optionalAuth, async (req, res) => {
       post.paymentSettings = null;
     }
 
+    // 检查当前用户是否已购买付费内容
+    if (currentUserId && post.paymentSettings && post.paymentSettings.enabled) {
+      const [purchaseRows] = await pool.execute(
+        'SELECT id FROM user_purchased_content WHERE user_id = ? AND post_id = ?',
+        [currentUserId, postId]
+      );
+      post.hasPurchased = purchaseRows.length > 0;
+      console.log(`🔍 [帖子详情] 用户 ${currentUserId} 是否已购买帖子 ${postId}: ${post.hasPurchased}`);
+    } else {
+      post.hasPurchased = false;
+    }
+
     // 检查当前用户是否已点赞和收藏（仅在用户已登录时检查）
     if (currentUserId) {
       const [likeResult] = await pool.execute(
