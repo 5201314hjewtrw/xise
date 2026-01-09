@@ -93,6 +93,25 @@
             </div>
           </div>
 
+          <!-- 视频预览秒数设置（仅视频类型） -->
+          <div class="setting-item" v-if="mediaType === 'video' && mediaCount > 0">
+            <div class="setting-label">
+              <span class="label-text">预览时长</span>
+              <span class="label-hint">用户可免费观看的视频秒数，超过后需解锁</span>
+            </div>
+            <div class="preview-duration-wrapper">
+              <input 
+                type="number" 
+                v-model.number="localSettings.previewDuration" 
+                min="0" 
+                step="1"
+                class="preview-duration-input"
+                placeholder="输入预览秒数"
+              />
+              <span class="preview-duration-hint">秒</span>
+            </div>
+          </div>
+
           <!-- 付费说明 -->
           <div class="payment-note">
             <SvgIcon name="info" width="16" height="16" />
@@ -138,7 +157,8 @@ const props = defineProps({
       enabled: false,
       paymentType: 'single',
       price: 0,
-      freePreviewCount: 0
+      freePreviewCount: 0,
+      previewDuration: 0
     })
   },
   mediaCount: {
@@ -168,7 +188,8 @@ const localSettings = reactive({
   enabled: false,
   paymentType: 'single',
   price: 0,
-  freePreviewCount: 0
+  freePreviewCount: 0,
+  previewDuration: 0
 })
 
 // 监听visible变化
@@ -431,6 +452,34 @@ const handleConfirm = () => {
 }
 
 .free-preview-hint {
+  font-size: 14px;
+  color: var(--text-color-tertiary);
+}
+
+/* Preview Duration (for videos) */
+.preview-duration-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-duration-input {
+  width: 100px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color-primary);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg-color-primary);
+  color: var(--text-color-primary);
+  transition: border-color 0.2s ease;
+}
+
+.preview-duration-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.preview-duration-hint {
   font-size: 14px;
   color: var(--text-color-tertiary);
 }

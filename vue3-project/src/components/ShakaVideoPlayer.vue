@@ -91,8 +91,8 @@
         </div>
       </div>
 
-      <!-- 加载指示器 -->
-      <div v-if="isLoading" class="loading-indicator">
+      <!-- 加载指示器 - 付费内容预览结束时不显示 -->
+      <div v-if="isLoading && !showPreviewEndedOverlay" class="loading-indicator">
         <div class="spinner"></div>
         <span>加载中...</span>
       </div>
@@ -101,6 +101,18 @@
       <div v-if="error" class="error-overlay">
         <SvgIcon name="warning" width="48" height="48" />
         <p>{{ error }}</p>
+      </div>
+
+      <!-- 预览结束解锁覆盖层 -->
+      <div v-if="showPreviewEndedOverlay" class="preview-ended-overlay">
+        <div class="preview-ended-content">
+          <div class="preview-ended-icon">🔒</div>
+          <div class="preview-ended-title">预览已结束</div>
+          <div class="preview-ended-text">解锁后观看完整视频</div>
+          <button class="preview-ended-unlock-btn" @click="handleUnlockClick">
+            立即解锁
+          </button>
+        </div>
       </div>
     </div>
     
@@ -215,10 +227,20 @@ const props = defineProps({
   adaptiveBitrate: {
     type: Boolean,
     default: import.meta.env.VITE_VIDEO_ADAPTIVE_BITRATE !== 'false'
+  },
+  // 预览时长（秒），0表示不限制
+  previewDuration: {
+    type: Number,
+    default: 0
+  },
+  // 是否为付费内容（用于显示解锁覆盖层）
+  isPaidContent: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['play', 'pause', 'ended', 'error', 'loaded'])
+const emit = defineEmits(['play', 'pause', 'ended', 'error', 'loaded', 'preview-ended', 'unlock-click'])
 
 // 引用
 const videoElement = ref(null)
@@ -235,6 +257,9 @@ const isMuted = ref(props.muted)
 const isFullscreen = ref(false)
 const controlsVisible = ref(true)
 const showQualityMenu = ref(false)
+
+// 预览相关状态
+const showPreviewEndedOverlay = ref(false) // 预览结束后显示解锁覆盖层
 
 // 右键菜单状态
 const contextMenuVisible = ref(false)
@@ -977,6 +1002,16 @@ const setupVideoListeners = () => {
     duration.value = videoElement.value.duration
     playedPercent.value = (currentTime.value / duration.value) * 100 || 0
     
+    // 检查预览时长限制
+    if (props.previewDuration > 0 && props.isPaidContent && !showPreviewEndedOverlay.value) {
+      if (currentTime.value >= props.previewDuration) {
+        // 预览时间到，暂停视频并显示解锁覆盖层
+        videoElement.value.pause()
+        showPreviewEndedOverlay.value = true
+        emit('preview-ended')
+      }
+    }
+    
     // 定期更新码率信息 - 每5秒更新一次，避免频繁更新
     const now = Date.now()
     if (now - lastBitrateUpdateTime >= 5000) {
@@ -1130,6 +1165,11 @@ onBeforeUnmount(() => {
   }
 })
 
+// 处理解锁按钮点击
+const handleUnlockClick = () => {
+  emit('unlock-click')
+}
+
 // 暴露方法
 defineExpose({
   play: () => videoElement.value?.play(),
@@ -1137,6 +1177,14 @@ defineExpose({
   seek: (time) => { 
     if (videoElement.value && isFinite(time) && time >= 0) {
       videoElement.value.currentTime = time
+    }
+  },
+  // 解锁后重置预览状态并播放完整视频
+  unlockAndPlay: () => {
+    showPreviewEndedOverlay.value = false
+    if (videoElement.value) {
+      videoElement.value.currentTime = 0
+      videoElement.value.play()
     }
   }
 })
@@ -1515,6 +1563,65 @@ defineExpose({
   font-weight: 500;
   line-height: 1.5;
   color: #ffcccc;
+}
+
+/* 预览结束解锁覆盖层 */
+.preview-ended-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
+  z-index: 25;
+}
+
+.preview-ended-content {
+  text-align: center;
+  color: white;
+  padding: 32px;
+}
+
+.preview-ended-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.preview-ended-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.preview-ended-text {
+  font-size: 16px;
+  opacity: 0.9;
+  margin-bottom: 24px;
+}
+
+.preview-ended-unlock-btn {
+  background: white;
+  color: #764ba2;
+  border: none;
+  padding: 14px 36px;
+  border-radius: 28px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.preview-ended-unlock-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+
+.preview-ended-unlock-btn:active {
+  transform: translateY(0);
 }
 
 /* 全屏模式 */

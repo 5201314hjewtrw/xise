@@ -35,6 +35,10 @@
             </div>
             上传成功
           </div>
+          <div v-if="videoData.duration > 0" class="duration-status">
+            <SvgIcon name="play" width="12" height="12" />
+            时长：{{ formatDuration(videoData.duration) }}
+          </div>
           <div v-if="customCover" class="cover-status">
             <SvgIcon name="image" width="12" height="12" />
             已设置自定义封面
@@ -278,8 +282,12 @@ const handleFile = async (file) => {
     uploaded: false,
     url: null,
     thumbnail: null, // 缩略图数据
-    thumbnailDataUrl: null // 缩略图预览URL
+    thumbnailDataUrl: null, // 缩略图预览URL
+    duration: 0 // 视频时长（秒）
   }
+  
+  // 获取视频时长
+  await getVideoDuration(preview)
 
   // 清空错误，但保持自定义封面
   error.value = ''
@@ -324,6 +332,38 @@ const handleCoverFile = async (file) => {
     error.value = '处理封面图片失败'
     showMessage('处理封面图片失败', 'error')
   }
+}
+
+// 获取视频时长
+const getVideoDuration = (videoUrl) => {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    
+    video.onloadedmetadata = () => {
+      if (videoData.value) {
+        videoData.value.duration = Math.floor(video.duration)
+      }
+      URL.revokeObjectURL(video.src)
+      resolve()
+    }
+    
+    video.onerror = () => {
+      console.warn('获取视频时长失败')
+      URL.revokeObjectURL(video.src)
+      resolve()
+    }
+    
+    video.src = videoUrl
+  })
+}
+
+// 格式化视频时长
+const formatDuration = (seconds) => {
+  if (!seconds || seconds <= 0) return '00:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
 // 生成视频缩略图
@@ -707,6 +747,15 @@ defineExpose({
 .cover-status {
   font-size: 10px;
   color: var(--primary-color);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.duration-status {
+  font-size: 10px;
+  color: var(--text-color-secondary);
   margin-top: 4px;
   display: flex;
   align-items: center;

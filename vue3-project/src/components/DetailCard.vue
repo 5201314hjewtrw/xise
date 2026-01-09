@@ -24,18 +24,58 @@
           @mouseleave="showImageControls = false">
           <!-- 视频播放器（桌面端） -->
           <div v-if="props.item.type === 2 && !isMobile" class="video-container">
-            <ShakaVideoPlayer
-              v-if="props.item.video_url"
-              ref="videoPlayer"
-              :src="props.item.video_url"
-              :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
-              :autoplay="true"
-              :show-controls="true"
-              :show-play-button="true"
-              :muted="false"
-              class="video-player"
-              @loaded="handleVideoLoad"
-            />
+            <!-- 有视频URL时，根据付费状态处理 -->
+            <template v-if="props.item.video_url">
+              <!-- 付费视频且未购买：显示预览视频 -->
+              <ShakaVideoPlayer
+                v-if="isPaidVideoWithPreview"
+                ref="videoPlayer"
+                :src="props.item.preview_video_url || props.item.video_url"
+                :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
+                :autoplay="true"
+                :show-controls="true"
+                :show-play-button="true"
+                :muted="false"
+                :preview-duration="paymentSettings?.previewDuration || 0"
+                :is-paid-content="isPaidContent && !hasPurchased"
+                class="video-player"
+                @loaded="handleVideoLoad"
+                @preview-ended="handlePreviewEnded"
+                @unlock-click="handleUnlockContent"
+              />
+              <!-- 非付费视频或已购买：显示完整视频 -->
+              <ShakaVideoPlayer
+                v-else
+                ref="videoPlayer"
+                :src="props.item.video_url"
+                :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
+                :autoplay="true"
+                :show-controls="true"
+                :show-play-button="true"
+                :muted="false"
+                class="video-player"
+                @loaded="handleVideoLoad"
+              />
+            </template>
+            <!-- 付费视频且无video_url：显示解锁遮罩 -->
+            <div v-else-if="isPaidContent && !hasPurchased" class="video-payment-overlay">
+              <div class="video-cover-blur" v-if="props.item.cover_url || (props.item.images && props.item.images[0])">
+                <img :src="props.item.cover_url || (props.item.images && props.item.images[0])" alt="视频封面" class="blur-cover-image" />
+              </div>
+              <div class="video-unlock-content">
+                <div class="unlock-icon">🔒</div>
+                <div class="unlock-text">付费视频</div>
+                <div class="unlock-price">
+                  <span class="price-icon">🍒</span>
+                  <span class="price-value">{{ paymentSettings?.price || 0 }}</span>
+                  <span class="price-unit">石榴点</span>
+                </div>
+                <button class="unlock-btn" @click="handleUnlockContent" :disabled="isUnlocking">
+                  {{ isUnlocking ? '解锁中...' : '立即解锁' }}
+                </button>
+              </div>
+            </div>
+            <!-- 非付费视频且无URL：显示加载中 -->
             <div v-else class="video-placeholder">
               <SvgIcon name="video" width="48" height="48" />
               <p>视频加载中...</p>
@@ -133,18 +173,58 @@
           <div class="scrollable-content" ref="scrollableContent">
             <!-- 视频播放器（移动端） -->
             <div v-if="props.item.type === 2 && isMobile" class="mobile-video-container">
-              <ShakaVideoPlayer
-                v-if="props.item.video_url"
-                ref="mobileVideoPlayer"
-                :src="props.item.video_url"
-                :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
-                :autoplay="true"
-                :show-controls="true"
-                :show-play-button="true"
-                :muted="false"
-                class="mobile-video-player"
-                @loaded="handleVideoLoad"
-              />
+              <!-- 有视频URL时，根据付费状态处理 -->
+              <template v-if="props.item.video_url">
+                <!-- 付费视频且未购买：显示预览视频 -->
+                <ShakaVideoPlayer
+                  v-if="isPaidVideoWithPreview"
+                  ref="mobileVideoPlayer"
+                  :src="props.item.preview_video_url || props.item.video_url"
+                  :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
+                  :autoplay="true"
+                  :show-controls="true"
+                  :show-play-button="true"
+                  :muted="false"
+                  :preview-duration="paymentSettings?.previewDuration || 0"
+                  :is-paid-content="isPaidContent && !hasPurchased"
+                  class="mobile-video-player"
+                  @loaded="handleVideoLoad"
+                  @preview-ended="handlePreviewEnded"
+                  @unlock-click="handleUnlockContent"
+                />
+                <!-- 非付费视频或已购买：显示完整视频 -->
+                <ShakaVideoPlayer
+                  v-else
+                  ref="mobileVideoPlayer"
+                  :src="props.item.video_url"
+                  :poster-url="props.item.cover_url || (props.item.images && props.item.images[0])"
+                  :autoplay="true"
+                  :show-controls="true"
+                  :show-play-button="true"
+                  :muted="false"
+                  class="mobile-video-player"
+                  @loaded="handleVideoLoad"
+                />
+              </template>
+              <!-- 付费视频且无video_url：显示解锁遮罩 -->
+              <div v-else-if="isPaidContent && !hasPurchased" class="video-payment-overlay">
+                <div class="video-cover-blur" v-if="props.item.cover_url || (props.item.images && props.item.images[0])">
+                  <img :src="props.item.cover_url || (props.item.images && props.item.images[0])" alt="视频封面" class="blur-cover-image" />
+                </div>
+                <div class="video-unlock-content">
+                  <div class="unlock-icon">🔒</div>
+                  <div class="unlock-text">付费视频</div>
+                  <div class="unlock-price">
+                    <span class="price-icon">🍒</span>
+                    <span class="price-value">{{ paymentSettings?.price || 0 }}</span>
+                    <span class="price-unit">石榴点</span>
+                  </div>
+                  <button class="unlock-btn" @click="handleUnlockContent" :disabled="isUnlocking">
+                    {{ isUnlocking ? '解锁中...' : '立即解锁' }}
+                  </button>
+                </div>
+              </div>
+              <!-- 非付费视频且无URL：显示加载中 -->
               <div v-else class="video-placeholder">
                 <SvgIcon name="video" width="48" height="48" />
                 <p>视频加载中...</p>
@@ -561,6 +641,13 @@ const handleVideoLoad = () => {
   // No additional actions needed here
 }
 
+// 处理预览视频播放完毕
+const handlePreviewEnded = () => {
+  // 预览视频播放完毕时，暂停视频并显示解锁提示
+  // ShakaVideoPlayer会在内部处理显示解锁覆盖层
+  console.log('🎬 [DetailCard] 预览视频播放完毕')
+}
+
 // 自动播放视频 - Not needed anymore as ShakaVideoPlayer handles autoplay internally
 // The autoplay prop is set to false in the player component, so user interaction is required
 
@@ -632,6 +719,17 @@ const hasPurchased = computed(() => {
   }
   // TODO: 实际应该从后端API获取用户是否已购买此内容
   return props.item.hasPurchased || false
+})
+
+// 是否为付费视频且有预览时长设置
+const isPaidVideoWithPreview = computed(() => {
+  // 是付费内容、未购买、且是视频类型
+  if (!isPaidContent.value || hasPurchased.value || props.item.type !== 2) {
+    return false
+  }
+  // 检查是否有预览时长设置
+  const previewDuration = paymentSettings.value?.previewDuration || 0
+  return previewDuration > 0
 })
 
 // 是否需要显示付费遮挡
@@ -3237,6 +3335,102 @@ function handleAvatarError(event) {
   max-width: 1000px;
   object-fit: contain;
   background: #000;
+}
+
+/* 视频付费遮罩样式 */
+.video-payment-overlay {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  overflow: hidden;
+}
+
+.video-cover-blur {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.blur-cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(20px);
+  transform: scale(1.1);
+  opacity: 0.5;
+}
+
+.video-unlock-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  color: white;
+  padding: 32px;
+}
+
+.video-unlock-content .unlock-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.video-unlock-content .unlock-text {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.video-unlock-content .unlock-price {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 18px;
+  margin-bottom: 24px;
+}
+
+.video-unlock-content .price-icon {
+  font-size: 24px;
+}
+
+.video-unlock-content .price-value {
+  font-weight: 700;
+  font-size: 32px;
+}
+
+.video-unlock-content .price-unit {
+  font-size: 16px;
+  opacity: 0.9;
+}
+
+.video-unlock-content .unlock-btn {
+  background: white;
+  color: #764ba2;
+  border: none;
+  padding: 16px 40px;
+  border-radius: 30px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.video-unlock-content .unlock-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+
+.video-unlock-content .unlock-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* 视频占位符样式 */
