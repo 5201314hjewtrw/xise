@@ -748,9 +748,20 @@ const isPaidVideoWithPreview = computed(() => {
 
 // 是否需要显示付费遮挡
 // 只有在付费内容且未购买且没有免费预览图片时才显示遮挡
+// 视频笔记有预览视频时不显示遮挡（等待预览视频播放完毕后再显示）
 const showPaymentOverlay = computed(() => {
   const isPaid = isPaidContent.value && !hasPurchased.value
   if (!isPaid) return false
+  
+  // 视频笔记：如果有预览视频URL或预览时长设置，不显示遮挡（让用户先看预览视频）
+  if (props.item.type === 2) {
+    const hasPreviewVideo = !!props.item.preview_video_url
+    const previewDuration = paymentSettings.value?.previewDuration || 0
+    if (hasPreviewVideo || previewDuration > 0) {
+      console.log('🔧 [DetailCard] 视频笔记有预览视频，不显示遮挡')
+      return false
+    }
+  }
   
   // 检查是否有免费图片
   const hasIsFreePreviewProp = rawImages.value.some(img => typeof img === 'object' && img.isFreePreview !== undefined)
