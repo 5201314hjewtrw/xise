@@ -2915,7 +2915,8 @@ const handleTouchMove = (e) => {
   const deltaY = Math.abs(touchMoveY - touchStartY.value)
 
   // 仅当"水平滑动幅度 > 垂直滑动幅度 + 阈值"时，阻止默认行为（避免影响页面垂直滚动）
-  if (deltaX > deltaY && deltaX > SWIPE_THRESHOLD) {
+  // 检查事件是否可取消，避免浏览器警告
+  if (deltaX > deltaY && deltaX > SWIPE_THRESHOLD && e.cancelable) {
     e.preventDefault()
     e.stopPropagation()
   }
@@ -2940,8 +2941,11 @@ const handleTouchEnd = (e) => {
 
   // 检查是否为有效的水平滑动
   if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
-    e.preventDefault()
-    e.stopPropagation()
+    // 检查事件是否可取消，避免浏览器警告
+    if (e.cancelable) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
     
     if (deltaX > 0) {
       prevImage()
