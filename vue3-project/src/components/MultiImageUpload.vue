@@ -22,6 +22,10 @@
             </div>
             <div class="image-index">{{ index + 1 }}</div>
           </div>
+          <!-- 调试信息：显示paymentEnabled状态 -->
+          <div class="debug-badge" style="position: absolute; top: 0; left: 0; background: blue; color: white; font-size: 8px; padding: 2px; z-index: 999;">
+            P:{{ props.paymentEnabled ? '是' : '否' }}
+          </div>
           <!-- 付费/免费预览标识 -->
           <div v-if="props.paymentEnabled" class="payment-badge" :class="{ 'free': imageItem.isFreePreview }" @click.stop="toggleFreePreview(index)">
             <span v-if="imageItem.isFreePreview" class="badge-text">👁 免费</span>
