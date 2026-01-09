@@ -69,9 +69,13 @@ router.get('/', optionalAuth, async (req, res) => {
           // 为瀑布流设置image字段
           post.image = videos.length > 0 && videos[0].cover_url ? videos[0].cover_url : null;
         } else {
-          // 图文笔记：获取笔记图片
-          const [images] = await pool.execute('SELECT image_url FROM post_images WHERE post_id = ?', [post.id]);
-          post.images = images.map(img => img.image_url);
+          // 图文笔记：获取笔记图片（包含is_free_preview属性）
+          const [images] = await pool.execute('SELECT image_url, is_free_preview FROM post_images WHERE post_id = ?', [post.id]);
+          // 返回包含isFreePreview属性的对象
+          post.images = images.map(img => ({
+            url: img.image_url,
+            isFreePreview: img.is_free_preview === 1
+          }));
           // 为瀑布流设置image字段（取第一张图片）
           post.image = images.length > 0 ? images[0].image_url : null;
         }
@@ -208,9 +212,9 @@ router.get('/', optionalAuth, async (req, res) => {
       const postIds = rows.map(post => post.id);
       const placeholders = postIds.map(() => '?').join(',');
       
-      // 批量获取所有图片
+      // 批量获取所有图片（包含is_free_preview属性）
       const [allImages] = await pool.execute(
-        `SELECT post_id, image_url FROM post_images WHERE post_id IN (${placeholders})`,
+        `SELECT post_id, image_url, is_free_preview FROM post_images WHERE post_id IN (${placeholders})`,
         postIds
       );
       const imagesByPostId = {};
@@ -218,7 +222,11 @@ router.get('/', optionalAuth, async (req, res) => {
         if (!imagesByPostId[img.post_id]) {
           imagesByPostId[img.post_id] = [];
         }
-        imagesByPostId[img.post_id].push(img.image_url);
+        // 返回包含isFreePreview属性的对象
+        imagesByPostId[img.post_id].push({
+          url: img.image_url,
+          isFreePreview: img.is_free_preview === 1
+        });
       });
       
       // 批量获取所有视频
@@ -461,9 +469,9 @@ router.get('/following', authenticateToken, async (req, res) => {
       // 创建占位符字符串和参数数组
       const placeholders = postIds.map(() => '?').join(',');
 
-      // 批量获取所有图片
+      // 批量获取所有图片（包含is_free_preview属性）
       const [allImages] = await pool.execute(
-        `SELECT post_id, image_url FROM post_images WHERE post_id IN (${placeholders})`,
+        `SELECT post_id, image_url, is_free_preview FROM post_images WHERE post_id IN (${placeholders})`,
         postIds
       );
       const imagesByPostId = {};
@@ -471,7 +479,11 @@ router.get('/following', authenticateToken, async (req, res) => {
         if (!imagesByPostId[img.post_id]) {
           imagesByPostId[img.post_id] = [];
         }
-        imagesByPostId[img.post_id].push(img.image_url);
+        // 返回包含isFreePreview属性的对象
+        imagesByPostId[img.post_id].push({
+          url: img.image_url,
+          isFreePreview: img.is_free_preview === 1
+        });
       });
 
       // 批量获取所有视频
@@ -609,9 +621,13 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
     // 根据帖子类型获取对应的媒体文件
     if (post.type === 1) {
-      // 图文类型：获取图片
-      const [images] = await pool.execute('SELECT image_url FROM post_images WHERE post_id = ?', [postId]);
-      post.images = images.map(img => img.image_url);
+      // 图文类型：获取图片（包含is_free_preview属性）
+      const [images] = await pool.execute('SELECT image_url, is_free_preview FROM post_images WHERE post_id = ?', [postId]);
+      // 返回包含isFreePreview属性的对象
+      post.images = images.map(img => ({
+        url: img.image_url,
+        isFreePreview: img.is_free_preview === 1
+      }));
     } else if (post.type === 2) {
       // 视频类型：获取视频
       const [videos] = await pool.execute('SELECT video_url, cover_url FROM post_videos WHERE post_id = ?', [postId]);
@@ -770,21 +786,30 @@ router.post('/', authenticateToken, async (req, res) => {
 
     // 处理图片（图文类型）
     if (postType === 1 && images && images.length > 0) {
-      const validUrls = []
-
-      // 处理所有有效的URL
-      for (const imageUrl of images) {
-        if (imageUrl && typeof imageUrl === 'string') {
-          validUrls.push(imageUrl)
+      // 处理所有有效的图片数据（支持字符串URL或包含isFreePreview属性的对象）
+      for (let i = 0; i < images.length; i++) {
+        const image = images[i];
+        let imageUrl = null;
+        let isFreePreview = 1; // 默认为免费预览
+        
+        if (typeof image === 'string') {
+          // 简单字符串URL格式
+          imageUrl = image;
+          // 默认第一张图片免费，其他根据paymentSettings决定
+          isFreePreview = 1; // 默认免费
+        } else if (image && typeof image === 'object') {
+          // 对象格式（包含url和isFreePreview属性）
+          imageUrl = image.url || image.preview;
+          // 从对象中获取isFreePreview，如果未定义则默认为true
+          isFreePreview = image.isFreePreview !== undefined ? (image.isFreePreview ? 1 : 0) : 1;
         }
-      }
-
-      // 插入所有有效的图片URL
-      for (const imageUrl of validUrls) {
-        await pool.execute(
-          'INSERT INTO post_images (post_id, image_url) VALUES (?, ?)',
-          [postId.toString(), imageUrl]
-        );
+        
+        if (imageUrl && typeof imageUrl === 'string') {
+          await pool.execute(
+            'INSERT INTO post_images (post_id, image_url, is_free_preview) VALUES (?, ?, ?)',
+            [postId.toString(), imageUrl, isFreePreview]
+          );
+        }
       }
     }
 
@@ -954,9 +979,9 @@ router.get('/search', optionalAuth, async (req, res) => {
       const postIds = rows.map(post => post.id);
       const placeholders = postIds.map(() => '?').join(',');
       
-      // 批量获取所有图片
+      // 批量获取所有图片（包含is_free_preview属性）
       const [allImages] = await pool.execute(
-        `SELECT post_id, image_url FROM post_images WHERE post_id IN (${placeholders})`,
+        `SELECT post_id, image_url, is_free_preview FROM post_images WHERE post_id IN (${placeholders})`,
         postIds
       );
       const imagesByPostId = {};
@@ -964,7 +989,11 @@ router.get('/search', optionalAuth, async (req, res) => {
         if (!imagesByPostId[img.post_id]) {
           imagesByPostId[img.post_id] = [];
         }
-        imagesByPostId[img.post_id].push(img.image_url);
+        // 返回包含isFreePreview属性的对象
+        imagesByPostId[img.post_id].push({
+          url: img.image_url,
+          isFreePreview: img.is_free_preview === 1
+        });
       });
       
       // 批量获取所有标签
@@ -1312,21 +1341,29 @@ router.put('/:id', authenticateToken, async (req, res) => {
       await pool.execute('DELETE FROM post_images WHERE post_id = ?', [postId.toString()]);
 
       if (images && images.length > 0) {
-        const validUrls = []
-
-        // 处理所有有效的URL
-        for (const imageUrl of images) {
-          if (imageUrl && typeof imageUrl === 'string') {
-            validUrls.push(imageUrl)
+        // 处理所有有效的图片数据（支持字符串URL或包含isFreePreview属性的对象）
+        for (let i = 0; i < images.length; i++) {
+          const image = images[i];
+          let imageUrl = null;
+          let isFreePreview = 1; // 默认为免费预览
+          
+          if (typeof image === 'string') {
+            // 简单字符串URL格式
+            imageUrl = image;
+            isFreePreview = 1; // 默认免费
+          } else if (image && typeof image === 'object') {
+            // 对象格式（包含url和isFreePreview属性）
+            imageUrl = image.url || image.preview;
+            // 从对象中获取isFreePreview，如果未定义则默认为true
+            isFreePreview = image.isFreePreview !== undefined ? (image.isFreePreview ? 1 : 0) : 1;
           }
-        }
-
-        // 插入所有有效的图片URL
-        for (const imageUrl of validUrls) {
-          await pool.execute(
-            'INSERT INTO post_images (post_id, image_url) VALUES (?, ?)',
-            [postId, imageUrl]
-          );
+          
+          if (imageUrl && typeof imageUrl === 'string') {
+            await pool.execute(
+              'INSERT INTO post_images (post_id, image_url, is_free_preview) VALUES (?, ?, ?)',
+              [postId, imageUrl, isFreePreview]
+            );
+          }
         }
       }
     }

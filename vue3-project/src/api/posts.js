@@ -20,9 +20,16 @@ function transformPostData(backendPost) {
   const collectCount = backendPost.collect_count || 0
   const commentCount = backendPost.comment_count || 0
 
+  // 处理图片数据：提取封面图片URL（兼容字符串和对象格式）
+  let coverImage = new URL('@/assets/imgs/未加载.png', import.meta.url).href
+  if (backendPost.images && backendPost.images.length > 0) {
+    const firstImage = backendPost.images[0]
+    coverImage = typeof firstImage === 'object' ? firstImage.url : firstImage
+  }
+
   const transformedData = {
     id: backendPost.id,
-    image: (backendPost.images && backendPost.images[0]) || new URL('@/assets/imgs/未加载.png', import.meta.url).href,
+    image: coverImage,
     title: backendPost.title,
     content: backendPost.content,
     images: backendPost.images || [],

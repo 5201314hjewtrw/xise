@@ -608,6 +608,17 @@ const freePreviewCount = computed(() => {
   return paymentSettings.value.freePreviewCount || 0
 })
 
+// 获取原始图片数据（用于访问isFreePreview属性）
+const rawImages = computed(() => {
+  if (props.item.originalData?.images && Array.isArray(props.item.originalData.images)) {
+    return props.item.originalData.images
+  }
+  if (props.item.images && Array.isArray(props.item.images)) {
+    return props.item.images
+  }
+  return []
+})
+
 // 可显示的图片列表（根据付费设置过滤）
 const visibleImageList = computed(() => {
   const allImages = imageList.value
@@ -616,11 +627,11 @@ const visibleImageList = computed(() => {
   }
   
   // 检查图片是否有 isFreePreview 属性（新格式）
-  const imagesWithFreePreviewProp = props.item.images?.filter(img => typeof img === 'object' && img.isFreePreview !== undefined)
+  const imagesWithFreePreviewProp = rawImages.value.filter(img => typeof img === 'object' && img.isFreePreview !== undefined)
   if (imagesWithFreePreviewProp && imagesWithFreePreviewProp.length > 0) {
     // 使用 isFreePreview 属性过滤，只显示标记为免费的图片
     return allImages.filter((url, index) => {
-      const imgData = props.item.images?.[index]
+      const imgData = rawImages.value[index]
       return imgData && typeof imgData === 'object' && imgData.isFreePreview
     })
   }
@@ -634,9 +645,9 @@ const hiddenImageCount = computed(() => {
   if (!showPaymentOverlay.value) return 0
   
   // 检查图片是否有 isFreePreview 属性
-  const imagesWithFreePreviewProp = props.item.images?.filter(img => typeof img === 'object' && img.isFreePreview !== undefined)
+  const imagesWithFreePreviewProp = rawImages.value.filter(img => typeof img === 'object' && img.isFreePreview !== undefined)
   if (imagesWithFreePreviewProp && imagesWithFreePreviewProp.length > 0) {
-    const paidCount = props.item.images.filter(img => typeof img === 'object' && !img.isFreePreview).length
+    const paidCount = rawImages.value.filter(img => typeof img === 'object' && !img.isFreePreview).length
     return paidCount
   }
   
@@ -837,16 +848,25 @@ const formatAttachmentSize = (bytes) => {
 }
 
 const imageList = computed(() => {
+  // 获取原始图片数据
+  let rawImages = []
   if (props.item.originalData?.images && Array.isArray(props.item.originalData.images) && props.item.originalData.images.length > 0) {
-    return props.item.originalData.images
-  }
-  if (props.item.images && Array.isArray(props.item.images) && props.item.images.length > 0) {
-    return props.item.images
-  }
-  if (props.item.image) {
+    rawImages = props.item.originalData.images
+  } else if (props.item.images && Array.isArray(props.item.images) && props.item.images.length > 0) {
+    rawImages = props.item.images
+  } else if (props.item.image) {
     return [props.item.image]
+  } else {
+    return [new URL('@/assets/imgs/未加载.png', import.meta.url).href]
   }
-  return [new URL('@/assets/imgs/未加载.png', import.meta.url).href]
+  
+  // 提取URL（兼容字符串和对象格式）
+  return rawImages.map(img => {
+    if (typeof img === 'object' && img.url) {
+      return img.url
+    }
+    return img
+  })
 })
 
 const hasMultipleImages = computed(() => imageList.value.length > 1)

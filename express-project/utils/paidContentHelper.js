@@ -71,7 +71,6 @@ function protectPostListItem(post, options) {
   
   const paid = isPaidContent(paymentSetting);
   const protect = shouldProtectContent(paymentSetting, isAuthor, hasPurchased);
-  const freeCount = getFreePreviewCount(paymentSetting);
   
   if (post.type === 2) {
     // 视频笔记
@@ -82,14 +81,33 @@ function protectPostListItem(post, options) {
   } else {
     // 图文笔记
     let images = imageUrls || [];
-    let coverImage = images.length > 0 ? images[0] : null;
     
-    // 保护付费图片：限制为免费预览数量
-    // 但始终至少显示1张图片作为封面（用户体验更好）
+    // 获取第一张图片作为封面（兼容字符串和对象格式）
+    let coverImage = null;
+    if (images.length > 0) {
+      const firstImg = images[0];
+      coverImage = typeof firstImg === 'object' ? firstImg.url : firstImg;
+    }
+    
+    // 保护付费图片
     if (protect) {
-      const minPreview = Math.max(1, freeCount);
-      if (images.length > minPreview) {
-        images = images.slice(0, minPreview);
+      // 优先使用isFreePreview属性过滤，如果图片是对象格式
+      const hasIsFreePreviewProp = images.some(img => typeof img === 'object' && img.isFreePreview !== undefined);
+      
+      if (hasIsFreePreviewProp) {
+        // 使用isFreePreview属性过滤，只保留标记为免费的图片
+        images = images.filter(img => typeof img === 'object' && img.isFreePreview === true);
+        // 如果所有图片都是付费的，至少显示第一张作为封面（模糊显示）
+        if (images.length === 0 && imageUrls && imageUrls.length > 0) {
+          images = [imageUrls[0]];
+        }
+      } else {
+        // 旧格式：使用freePreviewCount
+        const freeCount = getFreePreviewCount(paymentSetting);
+        const minPreview = Math.max(1, freeCount);
+        if (images.length > minPreview) {
+          images = images.slice(0, minPreview);
+        }
       }
     }
     post.images = images;
@@ -104,14 +122,23 @@ function protectPostListItem(post, options) {
  * 保护帖子详情中的付费内容
  * @param {Object} post - 帖子对象
  * @param {Object} options - 选项
- * @param {number} options.freePreviewCount - 免费预览数量
+ * @param {number} options.freePreviewCount - 免费预览数量（旧格式兼容）
  */
 function protectPostDetail(post, options = {}) {
-  const freePreviewCount = options.freePreviewCount || 0;
-  
-  // 限制图片数量为免费预览数量
-  if (post.images && post.images.length > freePreviewCount) {
-    post.images = post.images.slice(0, freePreviewCount);
+  // 处理图片：优先使用isFreePreview属性，否则使用freePreviewCount
+  if (post.images && post.images.length > 0) {
+    const hasIsFreePreviewProp = post.images.some(img => typeof img === 'object' && img.isFreePreview !== undefined);
+    
+    if (hasIsFreePreviewProp) {
+      // 使用isFreePreview属性过滤，只保留标记为免费的图片
+      post.images = post.images.filter(img => typeof img === 'object' && img.isFreePreview === true);
+    } else {
+      // 旧格式：限制图片数量为免费预览数量
+      const freePreviewCount = options.freePreviewCount || 0;
+      if (post.images.length > freePreviewCount) {
+        post.images = post.images.slice(0, freePreviewCount);
+      }
+    }
   }
   
   // 隐藏视频URL（只保留封面图用于预览）
