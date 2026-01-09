@@ -706,7 +706,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
     // 保护付费内容：如果是付费内容且用户未购买且不是作者，使用助手函数隐藏付费部分
     if (post.paymentSettings && post.paymentSettings.enabled && !hasPurchased && !isAuthor) {
       protectPostDetail(post, {
-        freePreviewCount: post.paymentSettings.freePreviewCount || 0
+        freePreviewCount: post.paymentSettings.freePreviewCount || 0,
+        previewDuration: post.paymentSettings.previewDuration || 0
       });
       console.log(`🔒 [帖子详情] 付费内容已保护 - 帖子ID: ${postId}, 用户ID: ${currentUserId || '未登录'}`);
     }
