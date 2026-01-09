@@ -57,6 +57,25 @@ function safeUnicodeTruncate(text, maxLength) {
 }
 
 /**
+ * 对图片进行排序，免费图片优先
+ * @param {Array} images - 图片数组
+ * @returns {Array} 排序后的图片数组
+ */
+function sortImagesByFreeFirst(images) {
+  if (!Array.isArray(images) || images.length === 0) {
+    return images;
+  }
+  
+  return [...images].sort((a, b) => {
+    const aIsFree = typeof a === 'object' && a.isFreePreview === true;
+    const bIsFree = typeof b === 'object' && b.isFreePreview === true;
+    if (aIsFree && !bIsFree) return -1;
+    if (!aIsFree && bIsFree) return 1;
+    return 0;
+  });
+}
+
+/**
  * 保护帖子列表项中的付费内容
  * @param {Object} post - 帖子对象
  * @param {Object} options - 选项
@@ -82,7 +101,10 @@ function protectPostListItem(post, options) {
     // 图文笔记
     let images = imageUrls || [];
     
-    // 获取第一张图片作为封面（兼容字符串和对象格式）
+    // 对图片进行排序：免费图片优先显示
+    images = sortImagesByFreeFirst(images);
+    
+    // 获取第一张图片作为封面（排序后免费图片优先）
     let coverImage = null;
     if (images.length > 0) {
       const firstImg = images[0];
@@ -112,7 +134,7 @@ function protectPostListItem(post, options) {
       }
     }
     post.images = images;
-    // 封面图始终显示第一张（即使是付费内容也显示封面）
+    // 封面图始终显示第一张（排序后的免费图片优先）
     post.image = coverImage;
   }
   
@@ -128,6 +150,9 @@ function protectPostListItem(post, options) {
 function protectPostDetail(post, options = {}) {
   // 处理图片：优先使用isFreePreview属性，否则使用freePreviewCount
   if (post.images && post.images.length > 0) {
+    // 首先对图片进行排序：免费图片优先显示
+    post.images = sortImagesByFreeFirst(post.images);
+    
     const hasIsFreePreviewProp = post.images.some(img => typeof img === 'object' && img.isFreePreview !== undefined);
     
     if (hasIsFreePreviewProp) {

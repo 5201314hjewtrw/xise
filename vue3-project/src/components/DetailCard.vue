@@ -608,15 +608,23 @@ const freePreviewCount = computed(() => {
   return paymentSettings.value.freePreviewCount || 0
 })
 
-// 获取原始图片数据（用于访问isFreePreview属性）
+// 获取原始图片数据（用于访问isFreePreview属性）- 排序后免费图片优先
 const rawImages = computed(() => {
+  let images = []
   if (props.item.originalData?.images && Array.isArray(props.item.originalData.images)) {
-    return props.item.originalData.images
+    images = props.item.originalData.images
+  } else if (props.item.images && Array.isArray(props.item.images)) {
+    images = props.item.images
   }
-  if (props.item.images && Array.isArray(props.item.images)) {
-    return props.item.images
-  }
-  return []
+  
+  // 对图片进行排序：免费图片优先显示
+  return [...images].sort((a, b) => {
+    const aIsFree = typeof a === 'object' && a.isFreePreview === true
+    const bIsFree = typeof b === 'object' && b.isFreePreview === true
+    if (aIsFree && !bIsFree) return -1
+    if (!aIsFree && bIsFree) return 1
+    return 0
+  })
 })
 
 // 可显示的图片列表（根据付费设置过滤）
@@ -860,8 +868,17 @@ const imageList = computed(() => {
     return [new URL('@/assets/imgs/未加载.png', import.meta.url).href]
   }
   
+  // 对图片进行排序：免费图片优先显示
+  const sortedImages = [...rawImages].sort((a, b) => {
+    const aIsFree = typeof a === 'object' && a.isFreePreview === true
+    const bIsFree = typeof b === 'object' && b.isFreePreview === true
+    if (aIsFree && !bIsFree) return -1
+    if (!aIsFree && bIsFree) return 1
+    return 0
+  })
+  
   // 提取URL（兼容字符串和对象格式）
-  return rawImages.map(img => {
+  return sortedImages.map(img => {
     if (typeof img === 'object' && img.url) {
       return img.url
     }
