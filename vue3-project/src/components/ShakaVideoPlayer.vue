@@ -6,7 +6,7 @@
         :poster="posterUrl"
         :autoplay="autoplay"
         :muted="muted"
-        :loop="loop"
+        :loop="shouldLoop"
         playsinline
         class="video-element"
       ></video>
@@ -265,6 +265,16 @@ const showQualityMenu = ref(false)
 
 // 预览相关状态
 const showPreviewEndedOverlay = ref(false) // 预览结束后显示解锁覆盖层
+
+// 计算是否应该循环播放：预览视频和付费预览不应该循环
+const shouldLoop = computed(() => {
+  // 如果是预览视频或有预览时长限制的付费内容，不循环
+  if (props.isPreviewVideo || (props.isPaidContent && props.previewDuration > 0)) {
+    console.log('🎬 [ShakaVideoPlayer] 预览视频禁用循环播放')
+    return false
+  }
+  return props.loop
+})
 
 // 右键菜单状态
 const contextMenuVisible = ref(false)
