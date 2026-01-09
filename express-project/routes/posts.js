@@ -256,7 +256,7 @@ router.get('/', optionalAuth, async (req, res) => {
       
       // 批量获取付费设置
       const [allPaymentSettings] = await pool.execute(
-        `SELECT post_id, enabled, free_preview_count FROM post_payment_settings WHERE post_id IN (${placeholders})`,
+        `SELECT post_id, enabled, free_preview_count, preview_duration FROM post_payment_settings WHERE post_id IN (${placeholders})`,
         postIds
       );
       const paymentSettingsByPostId = {};
@@ -527,7 +527,7 @@ router.get('/following', authenticateToken, async (req, res) => {
       
       // 批量获取付费设置
       const [allPaymentSettings] = await pool.execute(
-        `SELECT post_id, enabled, free_preview_count FROM post_payment_settings WHERE post_id IN (${placeholders})`,
+        `SELECT post_id, enabled, free_preview_count, preview_duration FROM post_payment_settings WHERE post_id IN (${placeholders})`,
         postIds
       );
       const paymentSettingsByPostId = {};
@@ -671,7 +671,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
     // 获取付费设置信息
     const [paymentRows] = await pool.execute(
-      'SELECT enabled, payment_type, price, free_preview_count FROM post_payment_settings WHERE post_id = ?',
+      'SELECT enabled, payment_type, price, free_preview_count, preview_duration FROM post_payment_settings WHERE post_id = ?',
       [postId]
     );
     if (paymentRows.length > 0) {
@@ -679,7 +679,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
         enabled: paymentRows[0].enabled === 1,
         paymentType: paymentRows[0].payment_type,
         price: parseFloat(paymentRows[0].price),
-        freePreviewCount: paymentRows[0].free_preview_count
+        freePreviewCount: paymentRows[0].free_preview_count,
+        previewDuration: paymentRows[0].preview_duration || 0
       };
     } else {
       post.paymentSettings = null;
@@ -882,10 +883,11 @@ router.post('/', authenticateToken, async (req, res) => {
       console.log('付费类型:', paymentSettings.paymentType);
       console.log('价格:', price);
       console.log('免费预览数量:', paymentSettings.freePreviewCount);
+      console.log('视频预览时长:', paymentSettings.previewDuration);
 
       await pool.execute(
-        'INSERT INTO post_payment_settings (post_id, enabled, payment_type, price, free_preview_count) VALUES (?, ?, ?, ?, ?)',
-        [postId.toString(), 1, paymentSettings.paymentType || 'single', price, paymentSettings.freePreviewCount || 0]
+        'INSERT INTO post_payment_settings (post_id, enabled, payment_type, price, free_preview_count, preview_duration) VALUES (?, ?, ?, ?, ?, ?)',
+        [postId.toString(), 1, paymentSettings.paymentType || 'single', price, paymentSettings.freePreviewCount || 0, paymentSettings.previewDuration || 0]
       );
       console.log('✅ 付费设置记录插入成功');
     }
@@ -1021,7 +1023,7 @@ router.get('/search', optionalAuth, async (req, res) => {
       
       // 批量获取付费设置
       const [allPaymentSettings] = await pool.execute(
-        `SELECT post_id, enabled, free_preview_count FROM post_payment_settings WHERE post_id IN (${placeholders})`,
+        `SELECT post_id, enabled, free_preview_count, preview_duration FROM post_payment_settings WHERE post_id IN (${placeholders})`,
         postIds
       );
       const paymentSettingsByPostId = {};
@@ -1408,8 +1410,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
         
         console.log('💰 更新付费设置...');
         await pool.execute(
-          'INSERT INTO post_payment_settings (post_id, enabled, payment_type, price, free_preview_count) VALUES (?, ?, ?, ?, ?)',
-          [postId.toString(), 1, paymentSettings.paymentType || 'single', price, paymentSettings.freePreviewCount || 0]
+          'INSERT INTO post_payment_settings (post_id, enabled, payment_type, price, free_preview_count, preview_duration) VALUES (?, ?, ?, ?, ?, ?)',
+          [postId.toString(), 1, paymentSettings.paymentType || 'single', price, paymentSettings.freePreviewCount || 0, paymentSettings.previewDuration || 0]
         );
         console.log('✅ 付费设置更新成功');
       }
