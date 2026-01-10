@@ -1,5 +1,5 @@
 <template>
-  <CrudTable title="认证管理" entity-name="认证申请" api-endpoint="/admin/audit" :columns="columns" :form-fields="formFields"
+  <CrudTable title="审核管理" entity-name="内容审核" api-endpoint="/admin/content-review" :columns="columns" :form-fields="formFields"
     :search-fields="searchFields" :custom-actions="customActions" @custom-action="handleCustomAction" />
 
   <!-- 消息提示 -->
@@ -7,7 +7,7 @@
 
   <!-- 删除确认弹窗 -->
   <ConfirmDialog v-model:visible="showDeleteModal" title="确认删除"
-    :message="`确定要删除用户《${selectedItem?.nickname || selectedItem?.user_id}》的认证申请吗？此操作不可撤销。`" type="warning"
+    :message="`确定要删除此审核记录吗？此操作不可撤销。`" type="warning"
     confirm-text="删除" cancel-text="取消" @confirm="handleConfirmDelete" @cancel="showDeleteModal = false" />
 </template>
 
@@ -44,7 +44,7 @@ const handleToastClose = () => {
 // 处理删除确认
 const handleConfirmDelete = async () => {
   try {
-    const response = await fetch(`${apiConfig.baseURL}/admin/audit/${selectedItem.value.id}`, {
+    const response = await fetch(`${apiConfig.baseURL}/admin/content-review/${selectedItem.value.id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     })
@@ -86,15 +86,21 @@ const columns = [
   { key: 'nickname', label: '用户昵称', sortable: false },
   {
     key: 'type',
-    label: '认证类型',
+    label: '审核类型',
     type: 'status',
     sortable: false,
     statusMap: {
-      1: { text: '官方认证', class: 'type-official' },
-      2: { text: '个人认证', class: 'type-personal' }
+      3: { text: '评论审核', class: 'type-comment' },
+      4: { text: '昵称审核', class: 'type-nickname' }
     }
   },
-  { key: 'content', label: '认证内容', type: 'content', sortable: false },
+  { key: 'content', label: '审核内容', type: 'content', sortable: false },
+  { key: 'risk_level', label: '风险等级', type: 'status', sortable: false, statusMap: {
+    'low': { text: '低风险', class: 'risk-low' },
+    'medium': { text: '中风险', class: 'risk-medium' },
+    'high': { text: '高风险', class: 'risk-high' }
+  }},
+  { key: 'reason', label: '审核原因', type: 'text', sortable: false },
   {
     key: 'status',
     label: '审核状态',
@@ -106,7 +112,7 @@ const columns = [
       2: { text: '已拒绝', class: 'status-rejected' }
     }
   },
-  { key: 'created_at', label: '申请时间', type: 'date', sortable: true },
+  { key: 'created_at', label: '创建时间', type: 'date', sortable: true },
   { key: 'audit_time', label: '审核时间', type: 'date', sortable: true }
 ]
 
@@ -115,15 +121,15 @@ const formFields = computed(() => [
   { key: 'user_id', label: '用户ID', type: 'number', required: true, placeholder: '请输入用户ID' },
   {
     key: 'type',
-    label: '认证类型',
+    label: '审核类型',
     type: 'select',
     required: true,
     options: [
-      { value: 1, label: '官方认证' },
-      { value: 2, label: '个人认证' }
+      { value: 3, label: '评论审核' },
+      { value: 4, label: '昵称审核' }
     ]
   },
-  { key: 'content', label: '认证内容', type: 'textarea', required: true, placeholder: '请输入认证相关内容' },
+  { key: 'content', label: '审核内容', type: 'textarea', required: true, placeholder: '请输入审核相关内容' },
   {
     key: 'status',
     label: '审核状态',
@@ -142,13 +148,13 @@ const searchFields = [
   { key: 'user_display_id', label: '用户汐社号', placeholder: '搜索用户汐社号' },
   {
     key: 'type',
-    label: '认证类型',
+    label: '审核类型',
     type: 'select',
-    placeholder: '选择认证类型',
+    placeholder: '选择审核类型',
     options: [
       { value: '', label: '全部类型' },
-      { value: '1', label: '官方认证' },
-      { value: '2', label: '个人认证' }
+      { value: '3', label: '评论审核' },
+      { value: '4', label: '昵称审核' }
     ]
   },
   {
@@ -168,7 +174,7 @@ const searchFields = [
 // 自定义操作按钮
 const customActions = [
   { key: 'approve', icon: 'passed', title: '审核通过', class: 'btn-success' },
-  { key: 'reject', icon: 'unpassed', title: '拒绝申请', class: 'btn-danger' },
+  { key: 'reject', icon: 'unpassed', title: '拒绝', class: 'btn-danger' },
   { key: 'delete', icon: 'delete', title: '删除', class: 'btn-outline' }
 ]
 
@@ -177,7 +183,7 @@ const handleCustomAction = async ({ action, item }) => {
   try {
     if (action === 'approve') {
       // 审核通过
-      const response = await fetch(`${apiConfig.baseURL}/admin/audit/${item.id}/approve`, {
+      const response = await fetch(`${apiConfig.baseURL}/admin/content-review/${item.id}/approve`, {
         method: 'PUT',
         headers: getAuthHeaders()
       })
@@ -190,18 +196,18 @@ const handleCustomAction = async ({ action, item }) => {
         showMessage('审核通过失败: ' + result.message, 'error')
       }
     } else if (action === 'reject') {
-      // 拒绝申请
-      const response = await fetch(`${apiConfig.baseURL}/admin/audit/${item.id}/reject`, {
+      // 拒绝
+      const response = await fetch(`${apiConfig.baseURL}/admin/content-review/${item.id}/reject`, {
         method: 'PUT',
         headers: getAuthHeaders()
       })
       const result = await response.json()
       if (result.code === 200) {
-        showMessage('拒绝申请成功')
+        showMessage('拒绝成功')
         // 刷新页面数据
         location.reload()
       } else {
-        showMessage('拒绝申请失败: ' + result.message, 'error')
+        showMessage('拒绝失败: ' + result.message, 'error')
       }
     } else if (action === 'delete') {
       // 显示删除确认弹窗
@@ -226,6 +232,28 @@ const handleCustomAction = async ({ action, item }) => {
 }
 
 :deep(.status-rejected) {
+  color: #e74c3c;
+}
+
+/* 类型样式 */
+:deep(.type-comment) {
+  color: #1abc9c;
+}
+
+:deep(.type-nickname) {
+  color: #e67e22;
+}
+
+/* 风险等级样式 */
+:deep(.risk-low) {
+  color: #4caf50;
+}
+
+:deep(.risk-medium) {
+  color: #f39c12;
+}
+
+:deep(.risk-high) {
   color: #e74c3c;
 }
 </style>

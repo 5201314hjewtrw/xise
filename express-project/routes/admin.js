@@ -2310,4 +2310,266 @@ router.get('/categories', adminAuth, async (req, res) => {
   }
 })
 
+// ==================== 内容审核管理 (Content Review) ====================
+
+// 内容审核 CRUD 配置 (type 3=评论审核, 4=昵称审核)
+const contentReviewCrudConfig = {
+  table: 'audit',
+  name: '内容审核',
+  requiredFields: ['user_id', 'type', 'content'],
+  updateFields: ['type', 'content', 'status', 'audit_time'],
+  searchFields: {
+    user_id: { operator: '=' },
+    type: { operator: '=' },
+    status: { operator: '=' },
+    user_display_id: { operator: '=' }
+  },
+  allowedSortFields: ['id', 'created_at', 'audit_time', 'status'],
+  defaultOrderBy: 'created_at DESC',
+
+  // 自定义查询，关联用户信息，只查询type=3或type=4的记录
+  customQueries: {
+    getList: async (req) => {
+      const { page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'DESC', ...filters } = req.query
+      const offset = (page - 1) * limit
+
+      // 构建查询条件 - 只查询内容审核类型 (3=评论审核, 4=昵称审核)
+      let whereClause = 'WHERE a.type IN (3, 4)'
+      const queryParams = []
+
+      // 处理筛选条件
+      if (filters.user_id) {
+        whereClause += ` AND a.user_id = ?`
+        queryParams.push(filters.user_id)
+      }
+
+      if (filters.user_display_id) {
+        whereClause += ` AND u.user_id LIKE ?`
+        queryParams.push(`%${filters.user_display_id}%`)
+      }
+
+      if (filters.type) {
+        whereClause += ` AND a.type = ?`
+        queryParams.push(filters.type)
+      }
+
+      if (filters.status !== undefined && filters.status !== '') {
+        whereClause += ` AND a.status = ?`
+        queryParams.push(parseInt(filters.status))
+      }
+
+      // 构建排序
+      const validSortFields = ['id', 'created_at', 'audit_time', 'status']
+      const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at'
+      const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
+
+      // 查询数据
+      const dataQuery = `
+        SELECT 
+          a.id,
+          a.user_id,
+          a.type,
+          a.target_id,
+          a.content,
+          a.risk_level,
+          a.categories,
+          a.reason,
+          a.status,
+          a.created_at,
+          a.audit_time,
+          u.user_id as user_display_id,
+          u.nickname,
+          u.avatar
+        FROM audit a
+        LEFT JOIN users u ON a.user_id = u.id
+        ${whereClause}
+        ORDER BY a.${sortField} ${order}
+        LIMIT ? OFFSET ?
+      `
+
+      // 查询总数
+      const countQuery = `
+        SELECT COUNT(*) as total
+        FROM audit a
+        LEFT JOIN users u ON a.user_id = u.id
+        ${whereClause}
+      `
+
+      queryParams.push(parseInt(limit), offset)
+
+      const [dataResult, countResult] = await Promise.all([
+        pool.query(dataQuery, queryParams),
+        pool.query(countQuery, queryParams.slice(0, -2))
+      ])
+
+      return {
+        data: dataResult[0],
+        total: parseInt(countResult[0][0].total),
+        page: parseInt(page),
+        limit: parseInt(limit)
+      }
+    },
+
+    getOne: async (req) => {
+      const { id } = req.params
+
+      const query = `
+        SELECT 
+          a.id,
+          a.user_id,
+          a.type,
+          a.target_id,
+          a.content,
+          a.audit_result,
+          a.risk_level,
+          a.categories,
+          a.reason,
+          a.status,
+          a.created_at,
+          a.audit_time,
+          u.user_id as user_display_id,
+          u.nickname,
+          u.avatar
+        FROM audit a
+        LEFT JOIN users u ON a.user_id = u.id
+        WHERE a.id = ? AND a.type IN (3, 4)
+      `
+
+      const result = await pool.query(query, [id])
+      return result[0][0] || null
+    }
+  }
+}
+
+const contentReviewHandlers = createCrudHandlers(contentReviewCrudConfig)
+
+// 内容审核管理路由
+router.post('/content-review', adminAuth, contentReviewHandlers.create)
+router.put('/content-review/:id', adminAuth, contentReviewHandlers.update)
+router.delete('/content-review/:id', adminAuth, contentReviewHandlers.deleteOne)
+router.delete('/content-review', adminAuth, contentReviewHandlers.deleteMany)
+router.get('/content-review/:id', adminAuth, async (req, res) => {
+  try {
+    const result = await contentReviewCrudConfig.customQueries.getOne(req)
+    if (!result) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        code: RESPONSE_CODES.NOT_FOUND,
+        message: '审核记录不存在'
+      })
+    }
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '获取审核记录成功',
+      data: result
+    })
+  } catch (error) {
+    console.error('获取审核记录失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '获取审核记录失败',
+      error: error.message
+    })
+  }
+})
+
+router.get('/content-review', adminAuth, async (req, res) => {
+  try {
+    const result = await contentReviewCrudConfig.customQueries.getList(req)
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '获取审核列表成功',
+      data: result
+    })
+  } catch (error) {
+    console.error('获取审核列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '获取审核列表失败',
+      error: error.message
+    })
+  }
+})
+
+// 内容审核通过
+router.put('/content-review/:id/approve', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // 获取审核记录信息
+    const [auditResult] = await pool.query('SELECT user_id, type, target_id FROM audit WHERE id = ? AND type IN (3, 4)', [id])
+    if (auditResult.length === 0) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        code: RESPONSE_CODES.ERROR,
+        message: '审核记录不存在'
+      })
+    }
+
+    const { user_id, type, target_id } = auditResult[0]
+
+    // 更新审核状态为通过
+    await pool.query('UPDATE audit SET status = 1, audit_time = NOW() WHERE id = ?', [id])
+
+    // 根据审核类型执行不同操作
+    if (type === 3 && target_id) {
+      // type: 3-评论审核，更新评论的审核状态和可见性
+      await pool.query('UPDATE comments SET audit_status = 1, is_public = 1 WHERE id = ?', [target_id])
+    } else if (type === 4) {
+      // type: 4-昵称审核 (可以在这里处理昵称审核逻辑)
+    }
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '审核通过成功'
+    })
+  } catch (error) {
+    console.error('审核通过失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '审核通过失败',
+      error: error.message
+    })
+  }
+})
+
+// 内容审核拒绝
+router.put('/content-review/:id/reject', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // 获取审核记录信息
+    const [auditResult] = await pool.query('SELECT user_id, type, target_id FROM audit WHERE id = ? AND type IN (3, 4)', [id])
+    if (auditResult.length === 0) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        code: RESPONSE_CODES.ERROR,
+        message: '审核记录不存在'
+      })
+    }
+
+    const { user_id, type, target_id } = auditResult[0]
+
+    // 更新审核状态为拒绝
+    await pool.query('UPDATE audit SET status = 2, audit_time = NOW() WHERE id = ?', [id])
+
+    // 根据审核类型执行不同操作
+    if (type === 3 && target_id) {
+      // type: 3-评论审核，更新评论的审核状态（保持不公开）
+      await pool.query('UPDATE comments SET audit_status = 2, is_public = 0 WHERE id = ?', [target_id])
+    } else if (type === 4) {
+      // type: 4-昵称审核 (可以在这里处理昵称审核逻辑)
+    }
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '拒绝成功'
+    })
+  } catch (error) {
+    console.error('拒绝失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '拒绝失败',
+      error: error.message
+    })
+  }
+})
+
 module.exports = router
