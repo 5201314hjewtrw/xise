@@ -2446,7 +2446,48 @@ const contentReviewHandlers = createCrudHandlers(contentReviewCrudConfig)
 // 内容审核管理路由
 router.post('/content-review', adminAuth, contentReviewHandlers.create)
 router.put('/content-review/:id', adminAuth, contentReviewHandlers.update)
-router.delete('/content-review/:id', adminAuth, contentReviewHandlers.deleteOne)
+
+// 自定义删除处理器：删除审核记录时同时删除关联的评论
+router.delete('/content-review/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    
+    // 先获取审核记录，查看是否有关联的评论
+    const [auditResult] = await pool.query('SELECT type, target_id FROM audit WHERE id = ? AND type IN (3, 4)', [id])
+    if (auditResult.length === 0) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        code: RESPONSE_CODES.ERROR,
+        message: '审核记录不存在'
+      })
+    }
+    
+    const { type, target_id } = auditResult[0]
+    
+    // 如果是评论审核(type=3)且有关联的评论ID，先删除评论
+    if (type === 3 && target_id) {
+      // 删除评论的点赞记录
+      await pool.query('DELETE FROM likes WHERE target_type = 2 AND target_id = ?', [target_id])
+      // 删除评论
+      await pool.query('DELETE FROM comments WHERE id = ?', [target_id])
+    }
+    
+    // 删除审核记录
+    await pool.query('DELETE FROM audit WHERE id = ?', [id])
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: '删除成功'
+    })
+  } catch (error) {
+    console.error('删除审核记录失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: '删除失败',
+      error: error.message
+    })
+  }
+})
+
 router.delete('/content-review', adminAuth, contentReviewHandlers.deleteMany)
 router.get('/content-review/:id', adminAuth, async (req, res) => {
   try {

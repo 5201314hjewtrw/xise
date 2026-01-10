@@ -174,6 +174,23 @@ router.post('/', authenticateToken, async (req, res) => {
         // 调用审核API获取审核建议
         auditResult = await auditComment(sanitizedContent, userId);
         
+        // 构建详细的审核原因，包含AI返回的所有信息
+        let detailedReason = '';
+        if (auditResult) {
+          const parts = [];
+          if (auditResult.reason) parts.push(`AI审核结果: ${auditResult.reason}`);
+          if (auditResult.suggestion) parts.push(`建议: ${auditResult.suggestion}`);
+          if (auditResult.passed !== undefined) parts.push(`是否通过: ${auditResult.passed ? '是' : '否'}`);
+          if (auditResult.score !== undefined) parts.push(`风险分数: ${auditResult.score}`);
+          if (auditResult.matched_keywords && auditResult.matched_keywords.length > 0) {
+            parts.push(`匹配关键词: ${auditResult.matched_keywords.join(', ')}`);
+          }
+          if (auditResult.problem_sentences && auditResult.problem_sentences.length > 0) {
+            parts.push(`问题句子: ${auditResult.problem_sentences.join('; ')}`);
+          }
+          detailedReason = parts.join(' | ');
+        }
+        
         // 无论API返回什么结果，都记录到audit表，由管理员人工审核决定
         await pool.execute(
           `INSERT INTO audit (user_id, type, target_id, content, audit_result, risk_level, categories, reason, status) 
@@ -184,7 +201,7 @@ router.post('/', authenticateToken, async (req, res) => {
             JSON.stringify(auditResult),
             auditResult?.risk_level || 'low',
             JSON.stringify(auditResult?.categories || []),
-            auditResult?.reason || ''
+            detailedReason || 'AI审核完成，等待人工确认'
           ]
         );
       } catch (auditError) {
