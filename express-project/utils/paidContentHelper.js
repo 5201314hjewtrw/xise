@@ -90,6 +90,7 @@ function protectPostListItem(post, options) {
   
   const paid = isPaidContent(paymentSetting);
   const protect = shouldProtectContent(paymentSetting, isAuthor, hasPurchased);
+  const hideAll = paymentSetting?.hide_all === 1 || paymentSetting?.hide_all === true;
   
   if (post.type === 2) {
     // 视频笔记
@@ -105,15 +106,22 @@ function protectPostListItem(post, options) {
       previewDuration,
       hasPreviewVideoUrl: !!hasPreviewVideoUrl,
       video_url_from_videoData: videoData?.video_url,
-      preview_video_url_from_videoData: videoData?.preview_video_url
+      preview_video_url_from_videoData: videoData?.preview_video_url,
+      hideAll
     });
     
     // 保护付费视频逻辑：
-    // 1. 如果有 preview_video_url，返回它用于预览播放
-    // 2. 如果没有 preview_video_url 但有 previewDuration，返回 video_url 用于前端限时播放
-    // 3. 如果都没有，不返回 video_url（完全保护）
+    // 1. 如果开启全部隐藏，完全保护视频
+    // 2. 如果有 preview_video_url，返回它用于预览播放
+    // 3. 如果没有 preview_video_url 但有 previewDuration，返回 video_url 用于前端限时播放
+    // 4. 如果都没有，不返回 video_url（完全保护）
     if (protect) {
-      if (hasPreviewVideoUrl) {
+      if (hideAll) {
+        // 全部隐藏模式：完全保护视频
+        post.video_url = null;
+        post.preview_video_url = null;
+        console.log('🎬 [protectPostListItem] 全部隐藏模式：完全隐藏视频');
+      } else if (hasPreviewVideoUrl) {
         // 有预览视频，返回预览视频URL，不返回完整视频URL
         post.video_url = null;
         post.preview_video_url = videoData.preview_video_url;
@@ -153,23 +161,29 @@ function protectPostListItem(post, options) {
     
     // 保护付费图片
     if (protect) {
-      // 优先使用isFreePreview属性过滤，如果图片是对象格式
-      const hasIsFreePreviewProp = images.some(img => typeof img === 'object' && img.isFreePreview !== undefined);
-      
-      if (hasIsFreePreviewProp) {
-        // 使用isFreePreview属性过滤，只保留标记为免费的图片
-        images = images.filter(img => typeof img === 'object' && img.isFreePreview === true);
-        // 如果所有图片都是付费的，返回空数组
-        // 前端会根据paymentOverlay显示模糊封面图作为预览
-        if (images.length === 0) {
-          images = [];
-        }
+      // 如果开启全部隐藏，隐藏所有图片
+      if (hideAll) {
+        images = [];
+        console.log('🖼️ [protectPostListItem] 全部隐藏模式：隐藏所有图片');
       } else {
-        // 旧格式：使用freePreviewCount
-        const freeCount = getFreePreviewCount(paymentSetting);
-        const minPreview = Math.max(1, freeCount);
-        if (images.length > minPreview) {
-          images = images.slice(0, minPreview);
+        // 优先使用isFreePreview属性过滤，如果图片是对象格式
+        const hasIsFreePreviewProp = images.some(img => typeof img === 'object' && img.isFreePreview !== undefined);
+        
+        if (hasIsFreePreviewProp) {
+          // 使用isFreePreview属性过滤，只保留标记为免费的图片
+          images = images.filter(img => typeof img === 'object' && img.isFreePreview === true);
+          // 如果所有图片都是付费的，返回空数组
+          // 前端会根据paymentOverlay显示模糊封面图作为预览
+          if (images.length === 0) {
+            images = [];
+          }
+        } else {
+          // 旧格式：使用freePreviewCount
+          const freeCount = getFreePreviewCount(paymentSetting);
+          const minPreview = Math.max(1, freeCount);
+          if (images.length > minPreview) {
+            images = images.slice(0, minPreview);
+          }
         }
       }
     }
@@ -186,7 +200,8 @@ function protectPostListItem(post, options) {
       enabled: paymentSetting.enabled === 1 || paymentSetting.enabled === true,
       freePreviewCount: paymentSetting.free_preview_count || 0,
       previewDuration: paymentSetting.preview_duration || 0,
-      price: paymentSetting.price || 0
+      price: paymentSetting.price || 0,
+      hideAll: paymentSetting.hide_all === 1 || paymentSetting.hide_all === true
     };
   } else {
     post.paymentSettings = null;
@@ -201,8 +216,12 @@ function protectPostListItem(post, options) {
  * @param {Object} post - 帖子对象
  * @param {Object} options - 选项
  * @param {number} options.freePreviewCount - 免费预览数量（旧格式兼容）
+ * @param {number} options.previewDuration - 视频预览时长（秒）
+ * @param {boolean} options.hideAll - 是否全部隐藏（仅隐藏内容文字，不隐藏标题）
  */
 function protectPostDetail(post, options = {}) {
+  const hideAll = options.hideAll || false;
+  
   // 处理图片：优先使用isFreePreview属性，否则使用freePreviewCount
   if (post.images && post.images.length > 0) {
     // 首先对图片进行排序：免费图片优先显示
@@ -219,10 +238,16 @@ function protectPostDetail(post, options = {}) {
       post.totalImagesCount = totalImagesCount;
       post.hiddenPaidImagesCount = paidImagesCount;
       
-      console.log(`🔧 [paidContentHelper] protectPostDetail - 总图片: ${totalImagesCount}, 付费图片: ${paidImagesCount}`);
+      console.log(`🔧 [paidContentHelper] protectPostDetail - 总图片: ${totalImagesCount}, 付费图片: ${paidImagesCount}, 全部隐藏: ${hideAll}`);
       
-      // 使用isFreePreview属性过滤，只保留标记为免费的图片
-      post.images = post.images.filter(img => typeof img === 'object' && img.isFreePreview === true);
+      // 如果开启全部隐藏，则隐藏所有图片
+      if (hideAll) {
+        post.images = [];
+        post.hiddenPaidImagesCount = totalImagesCount;
+      } else {
+        // 使用isFreePreview属性过滤，只保留标记为免费的图片
+        post.images = post.images.filter(img => typeof img === 'object' && img.isFreePreview === true);
+      }
     } else {
       // 旧格式：限制图片数量为免费预览数量
       const freePreviewCount = options.freePreviewCount || 0;
@@ -230,7 +255,11 @@ function protectPostDetail(post, options = {}) {
       post.totalImagesCount = totalImagesCount;
       post.hiddenPaidImagesCount = Math.max(0, totalImagesCount - freePreviewCount);
       
-      if (post.images.length > freePreviewCount) {
+      // 如果开启全部隐藏，则隐藏所有图片
+      if (hideAll) {
+        post.images = [];
+        post.hiddenPaidImagesCount = totalImagesCount;
+      } else if (post.images.length > freePreviewCount) {
         post.images = post.images.slice(0, freePreviewCount);
       }
     }
@@ -248,10 +277,19 @@ function protectPostDetail(post, options = {}) {
       previewDuration,
       hasPreviewVideoUrl: !!hasPreviewVideoUrl,
       video_url_before: post.video_url,
-      preview_video_url: post.preview_video_url
+      preview_video_url: post.preview_video_url,
+      hideAll
     });
     
-    if (hasPreviewVideoUrl) {
+    // 如果开启全部隐藏，完全保护视频
+    if (hideAll) {
+      post.video_url = null;
+      post.preview_video_url = null;
+      if (post.videos) {
+        post.videos = post.videos.map(v => ({ cover_url: v.cover_url, video_url: null }));
+      }
+      console.log('🎬 [protectPostDetail] 全部隐藏模式：完全隐藏视频');
+    } else if (hasPreviewVideoUrl) {
       // 有预览视频，返回预览视频URL，不返回完整视频URL
       post.video_url = null;
       // preview_video_url 保持不变
@@ -281,8 +319,15 @@ function protectPostDetail(post, options = {}) {
   // 隐藏附件
   post.attachment = null;
   
-  // 安全截断内容文本
-  if (post.content && Array.from(post.content).length > PAID_CONTENT.CONTENT_PREVIEW_LENGTH) {
+  // 处理内容文字：如果开启全部隐藏，完全隐藏内容（但保留标题）
+  if (hideAll) {
+    // 全部隐藏模式：隐藏所有内容文字
+    post.content = '';
+    post.contentTruncated = true;
+    post.contentHidden = true;  // 标记内容被完全隐藏
+    console.log('🔧 [paidContentHelper] 全部隐藏模式：内容已完全隐藏，标题保留');
+  } else if (post.content && Array.from(post.content).length > PAID_CONTENT.CONTENT_PREVIEW_LENGTH) {
+    // 安全截断内容文本
     post.content = safeUnicodeTruncate(post.content, PAID_CONTENT.CONTENT_PREVIEW_LENGTH);
     post.contentTruncated = true;
   }
