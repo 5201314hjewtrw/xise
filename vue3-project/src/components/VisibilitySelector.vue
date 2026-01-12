@@ -179,6 +179,7 @@ const selectVisibility = (value) => {
 
 .visibility-option:hover {
   border-color: var(--primary-color);
+  background: var(--bg-color-secondary);
 }
 
 .visibility-option.selected {

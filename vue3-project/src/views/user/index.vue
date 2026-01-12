@@ -226,8 +226,6 @@ const fixedSliderStyle = computed(() => {
   }
 })
 
-
-
 // 计算tab内容的transform值
 function getTabTransform(tabName) {
   const tabOrder = tabs.value.map(tab => tab.name)
