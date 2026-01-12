@@ -1,11 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
+const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES, AUDIT_TYPES, AUDIT_STATUS } = require('../constants');
 const { prisma } = require('../config/config');
 const { optionalAuth, authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const { protectPostListItem } = require('../utils/paidContentHelper');
+
+// 内容最大长度限制
+const MAX_CONTENT_LENGTH = 1000;
 
 // 搜索用户（必须放在 /:id 之前）
 router.get('/search', optionalAuth, async (req, res) => {
@@ -120,7 +123,16 @@ router.post('/verification', authenticateToken, async (req, res) => {
       });
     }
 
-    if (type !== 1 && type !== 2) {
+    // 验证内容长度
+    if (content.length > MAX_CONTENT_LENGTH) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: `认证内容不能超过${MAX_CONTENT_LENGTH}个字符`
+      });
+    }
+
+    // 使用常量验证认证类型
+    if (type !== AUDIT_TYPES.PERSONAL && type !== AUDIT_TYPES.BUSINESS) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         code: RESPONSE_CODES.VALIDATION_ERROR,
         message: '无效的认证类型'
@@ -128,7 +140,7 @@ router.post('/verification', authenticateToken, async (req, res) => {
     }
 
     const existingAudit = await prisma.audit.findFirst({
-      where: { user_id: userId, type: type, status: 0 }
+      where: { user_id: userId, type: type, status: AUDIT_STATUS.PENDING }
     });
 
     if (existingAudit) {
@@ -139,7 +151,7 @@ router.post('/verification', authenticateToken, async (req, res) => {
     }
 
     const audit = await prisma.audit.create({
-      data: { user_id: userId, type: type, content: content, status: 0 }
+      data: { user_id: userId, type: type, content: content, status: AUDIT_STATUS.PENDING }
     });
 
     res.status(HTTP_STATUS.CREATED).json({
@@ -194,8 +206,9 @@ router.delete('/verification/revoke', authenticateToken, async (req, res) => {
   try {
     const userId = BigInt(req.user.id);
 
+    const allStatuses = [AUDIT_STATUS.PENDING, AUDIT_STATUS.APPROVED, AUDIT_STATUS.REJECTED];
     const existingAudits = await prisma.audit.findMany({
-      where: { user_id: userId, status: { in: [0, 1, 2] } },
+      where: { user_id: userId, status: { in: allStatuses } },
       select: { id: true, status: true }
     });
 
@@ -207,10 +220,10 @@ router.delete('/verification/revoke', authenticateToken, async (req, res) => {
     }
 
     await prisma.audit.deleteMany({
-      where: { user_id: userId, status: { in: [0, 1, 2] } }
+      where: { user_id: userId, status: { in: allStatuses } }
     });
 
-    const hasApprovedAudit = existingAudits.some(audit => audit.status === 1);
+    const hasApprovedAudit = existingAudits.some(audit => audit.status === AUDIT_STATUS.APPROVED);
     if (hasApprovedAudit) {
       await prisma.user.update({
         where: { id: userId },
@@ -492,6 +505,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       await tx.collection.deleteMany({ where: { user_id: targetUserId } });
       await tx.follow.deleteMany({ where: { OR: [{ follower_id: targetUserId }, { following_id: targetUserId }] } });
       await tx.notification.deleteMany({ where: { OR: [{ user_id: targetUserId }, { sender_id: targetUserId }] } });
+      await tx.audit.deleteMany({ where: { user_id: targetUserId } });
       await tx.post.deleteMany({ where: { user_id: targetUserId } });
       await tx.user.delete({ where: { id: targetUserId } });
     });
