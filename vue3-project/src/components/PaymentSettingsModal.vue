@@ -113,6 +113,17 @@
             </div>
           </div>
 
+          <!-- 全部隐藏开关 -->
+          <div class="setting-item">
+            <div class="setting-label">
+              <span class="label-text">全部隐藏</span>
+              <span class="label-hint">开启后，隐藏所有内容文字，但保留标题</span>
+            </div>
+            <div class="toggle-switch" :class="{ active: localSettings.hideAll }" @click="toggleHideAll">
+              <div class="toggle-slider"></div>
+            </div>
+          </div>
+
           <!-- 付费说明 -->
           <div class="payment-note">
             <SvgIcon name="info" width="16" height="16" />
@@ -159,7 +170,8 @@ const props = defineProps({
       paymentType: 'single',
       price: 0,
       freePreviewCount: 0,
-      previewDuration: 0
+      previewDuration: 0,
+      hideAll: false
     })
   },
   mediaCount: {
@@ -190,7 +202,8 @@ const localSettings = reactive({
   paymentType: 'single',
   price: 0,
   freePreviewCount: 0,
-  previewDuration: 0
+  previewDuration: 0,
+  hideAll: false
 })
 
 // 监听visible变化
@@ -220,6 +233,10 @@ const toggleEnabled = () => {
   if (localSettings.enabled && localSettings.price === 0) {
     localSettings.price = 10 // 默认价格
   }
+}
+
+const toggleHideAll = () => {
+  localSettings.hideAll = !localSettings.hideAll
 }
 
 const handleClose = () => {

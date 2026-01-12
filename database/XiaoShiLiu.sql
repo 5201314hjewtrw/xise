@@ -1,7 +1,7 @@
 /*
- Navicat Premium Dump SQL
+ Navicat Premium Data Transfer
 
- Source Server         : 192.168.50.154
+ Source Server         : yuem
  Source Server Type    : MySQL
  Source Server Version : 80407 (8.4.7)
  Source Host           : 192.168.50.154:3306
@@ -11,7 +11,7 @@
  Target Server Version : 80407 (8.4.7)
  File Encoding         : 65001
 
- Date: 02/01/2026 02:29:09
+ Date: 12/01/2026 12:01:10
 */
 
 SET NAMES utf8mb4;
@@ -29,7 +29,7 @@ CREATE TABLE `admin`  (
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `username`(`username` ASC) USING BTREE,
   INDEX `idx_admin_username`(`username` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 16 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '管理员表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '管理员表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for audit
@@ -38,18 +38,25 @@ DROP TABLE IF EXISTS `audit`;
 CREATE TABLE `audit`  (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '审核ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
-  `type` tinyint NOT NULL COMMENT '审核类型：1-用户审核，2-内容审核，3-评论审核',
+  `type` tinyint NOT NULL COMMENT '审核类型：1-用户认证，2-内容审核，3-评论审核，4-昵称审核',
+  `target_id` bigint NULL DEFAULT NULL COMMENT '关联目标ID（如评论ID）',
   `content` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '审核内容',
+  `audit_result` json NULL COMMENT 'API审核结果JSON',
+  `risk_level` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '风险等级',
+  `categories` json NULL COMMENT '违规类别JSON数组',
+  `reason` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL COMMENT '审核原因',
+  `retry_count` int NOT NULL DEFAULT 0 COMMENT 'AI审核重试次数',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `audit_time` timestamp NULL DEFAULT NULL COMMENT '审核时间',
-  `status` tinyint(1) NULL DEFAULT 0 COMMENT '审核状态：0-待审核，1-审核通过',
+  `status` tinyint(1) NULL DEFAULT 0 COMMENT '审核状态：0-待审核，1-审核通过，2-审核拒绝',
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_user_id`(`user_id` ASC) USING BTREE,
   INDEX `idx_type`(`type` ASC) USING BTREE,
   INDEX `idx_status`(`status` ASC) USING BTREE,
   INDEX `idx_created_at`(`created_at` ASC) USING BTREE,
+  INDEX `idx_target_id`(`target_id` ASC) USING BTREE,
   CONSTRAINT `audit_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '审核表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 2 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '审核表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for categories
@@ -80,7 +87,7 @@ CREATE TABLE `collections`  (
   INDEX `idx_post_id`(`post_id` ASC) USING BTREE,
   CONSTRAINT `collections_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `collections_ibfk_2` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 409 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '收藏表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '收藏表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for comments
@@ -93,16 +100,21 @@ CREATE TABLE `comments`  (
   `parent_id` bigint NULL DEFAULT NULL COMMENT '父评论ID',
   `content` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '评论内容',
   `like_count` int NULL DEFAULT 0 COMMENT '点赞数',
+  `audit_status` tinyint NOT NULL DEFAULT 1 COMMENT '审核状态：0-待审核，1-审核通过，2-审核拒绝',
+  `is_public` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否公开可见：0-仅自己可见，1-公开可见',
+  `audit_result` json NULL COMMENT '审核结果JSON',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '评论时间',
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_post_id`(`post_id` ASC) USING BTREE,
   INDEX `idx_user_id`(`user_id` ASC) USING BTREE,
   INDEX `idx_parent_id`(`parent_id` ASC) USING BTREE,
   INDEX `idx_created_at`(`created_at` ASC) USING BTREE,
+  INDEX `idx_audit_status`(`audit_status` ASC) USING BTREE,
+  INDEX `idx_is_public`(`is_public` ASC) USING BTREE,
   CONSTRAINT `comments_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `comments_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `comments_ibfk_3` FOREIGN KEY (`parent_id`) REFERENCES `comments` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 806 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '评论表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 2 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '评论表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for follows
@@ -120,7 +132,7 @@ CREATE TABLE `follows`  (
   INDEX `idx_follower_following`(`follower_id` ASC, `following_id` ASC) USING BTREE,
   CONSTRAINT `follows_ibfk_1` FOREIGN KEY (`follower_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `follows_ibfk_2` FOREIGN KEY (`following_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 320 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '关注关系表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '关注关系表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for likes
@@ -138,7 +150,7 @@ CREATE TABLE `likes`  (
   INDEX `idx_target`(`target_type` ASC, `target_id` ASC) USING BTREE,
   INDEX `idx_user_target_type`(`user_id` ASC, `target_type` ASC, `target_id` ASC) USING BTREE,
   CONSTRAINT `likes_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 1014 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '点赞表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '点赞表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for notifications
@@ -165,7 +177,7 @@ CREATE TABLE `notifications`  (
   CONSTRAINT `fk_notifications_comment_id` FOREIGN KEY (`comment_id`) REFERENCES `comments` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `notifications_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `notifications_ibfk_2` FOREIGN KEY (`sender_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 2600 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '通知表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 2 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '通知表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for points_log
@@ -184,22 +196,7 @@ CREATE TABLE `points_log`  (
   INDEX `idx_type`(`type` ASC) USING BTREE,
   INDEX `idx_created_at`(`created_at` ASC) USING BTREE,
   CONSTRAINT `points_log_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '石榴点变动记录表' ROW_FORMAT = Dynamic;
-
--- ----------------------------
--- Table structure for post_images
--- ----------------------------
-DROP TABLE IF EXISTS `post_images`;
-CREATE TABLE `post_images`  (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '图片ID',
-  `post_id` bigint NOT NULL COMMENT '笔记ID',
-  `image_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '图片URL',
-  `is_free_preview` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否免费预览：1-免费预览，0-付费内容',
-  PRIMARY KEY (`id`) USING BTREE,
-  INDEX `idx_post_id`(`post_id` ASC) USING BTREE,
-  INDEX `idx_is_free_preview`(`is_free_preview` ASC) USING BTREE,
-  CONSTRAINT `post_images_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 588 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记图片表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '石榴点变动记录表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for post_attachments
@@ -218,6 +215,42 @@ CREATE TABLE `post_attachments`  (
 ) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记附件表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
+-- Table structure for post_images
+-- ----------------------------
+DROP TABLE IF EXISTS `post_images`;
+CREATE TABLE `post_images`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '图片ID',
+  `post_id` bigint NOT NULL COMMENT '笔记ID',
+  `image_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '图片URL',
+  `is_free_preview` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否免费预览：1-免费预览，0-付费内容',
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `idx_post_id`(`post_id` ASC) USING BTREE,
+  INDEX `idx_is_free_preview`(`is_free_preview` ASC) USING BTREE,
+  CONSTRAINT `post_images_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
+) ENGINE = InnoDB AUTO_INCREMENT = 61 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记图片表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for post_payment_settings
+-- ----------------------------
+DROP TABLE IF EXISTS `post_payment_settings`;
+CREATE TABLE `post_payment_settings`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `post_id` bigint NOT NULL COMMENT '笔记ID',
+  `enabled` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否启用付费',
+  `payment_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'single' COMMENT '付费类型：single-单篇付费，multi-多篇付费',
+  `price` decimal(10, 2) NOT NULL DEFAULT 0.00 COMMENT '价格（石榴点）',
+  `free_preview_count` int NOT NULL DEFAULT 0 COMMENT '免费预览数量',
+  `preview_duration` int NOT NULL DEFAULT 0 COMMENT '视频预览时长（秒）',
+  `hide_all` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否全部隐藏内容（仅隐藏内容文字，不隐藏标题）',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_post_id`(`post_id` ASC) USING BTREE,
+  INDEX `idx_post_id`(`post_id` ASC) USING BTREE,
+  CONSTRAINT `post_payment_settings_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '帖子付费设置表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
 -- Table structure for post_tags
 -- ----------------------------
 DROP TABLE IF EXISTS `post_tags`;
@@ -232,7 +265,7 @@ CREATE TABLE `post_tags`  (
   INDEX `idx_tag_id`(`tag_id` ASC) USING BTREE,
   CONSTRAINT `post_tags_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
   CONSTRAINT `post_tags_ibfk_2` FOREIGN KEY (`tag_id`) REFERENCES `tags` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 408 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记标签关联表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记标签关联表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for post_videos
@@ -243,14 +276,17 @@ CREATE TABLE `post_videos`  (
   `post_id` bigint NOT NULL COMMENT '笔记ID',
   `cover_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '视频封面URL',
   `video_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '视频URL',
+  `dash_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT 'DASH格式视频URL (manifest.mpd)',
+  `preview_video_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '预览视频URL',
   `mpd_path` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT 'DASH MPD文件路径',
   `transcode_status` enum('pending','processing','completed','failed','none') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT 'none' COMMENT '转码状态',
   `transcode_task_id` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '转码任务ID',
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_post_id`(`post_id` ASC) USING BTREE,
   INDEX `idx_transcode_status`(`transcode_status` ASC) USING BTREE,
+  INDEX `idx_dash_url`(`dash_url` ASC) USING BTREE,
   CONSTRAINT `post_videos_ibfk_1` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 45 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记视频表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记视频表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for posts
@@ -277,7 +313,7 @@ CREATE TABLE `posts`  (
   INDEX `idx_category_id_created_at`(`category_id` ASC, `created_at` ASC) USING BTREE,
   CONSTRAINT `fk_posts_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT `posts_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 245 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 203 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '笔记表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for system_settings
@@ -294,7 +330,7 @@ CREATE TABLE `system_settings`  (
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_setting_key`(`setting_key` ASC) USING BTREE,
   INDEX `idx_setting_group`(`setting_group` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 21 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '系统设置表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '系统设置表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for tags
@@ -312,6 +348,24 @@ CREATE TABLE `tags`  (
 ) ENGINE = InnoDB AUTO_INCREMENT = 74 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '标签表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
+-- Table structure for user_author_subscriptions
+-- ----------------------------
+DROP TABLE IF EXISTS `user_author_subscriptions`;
+CREATE TABLE `user_author_subscriptions`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `user_id` bigint NOT NULL COMMENT '订阅用户ID',
+  `author_id` bigint NOT NULL COMMENT '被订阅作者ID',
+  `price` decimal(10, 2) NOT NULL COMMENT '订阅价格',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '订阅时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_user_author`(`user_id` ASC, `author_id` ASC) USING BTREE,
+  INDEX `idx_user_id`(`user_id` ASC) USING BTREE,
+  INDEX `idx_author_id`(`author_id` ASC) USING BTREE,
+  CONSTRAINT `user_author_subscriptions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
+  CONSTRAINT `user_author_subscriptions_ibfk_2` FOREIGN KEY (`author_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '用户作者订阅表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
 -- Table structure for user_points
 -- ----------------------------
 DROP TABLE IF EXISTS `user_points`;
@@ -325,7 +379,30 @@ CREATE TABLE `user_points`  (
   UNIQUE INDEX `uk_user_id`(`user_id` ASC) USING BTREE,
   INDEX `idx_user_id`(`user_id` ASC) USING BTREE,
   CONSTRAINT `user_points_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '石榴点余额表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '石榴点余额表' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Table structure for user_purchased_content
+-- ----------------------------
+DROP TABLE IF EXISTS `user_purchased_content`;
+CREATE TABLE `user_purchased_content`  (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `user_id` bigint NOT NULL COMMENT '购买用户ID',
+  `post_id` bigint NOT NULL COMMENT '购买的笔记ID',
+  `author_id` bigint NOT NULL COMMENT '作者ID',
+  `price` decimal(10, 2) NOT NULL COMMENT '购买价格',
+  `purchase_type` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'single' COMMENT '购买类型：single-单篇购买，multi-多篇订阅',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `purchased_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '购买时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_user_post`(`user_id` ASC, `post_id` ASC) USING BTREE,
+  INDEX `idx_user_id`(`user_id` ASC) USING BTREE,
+  INDEX `idx_post_id`(`post_id` ASC) USING BTREE,
+  INDEX `idx_author_id`(`author_id` ASC) USING BTREE,
+  CONSTRAINT `user_purchased_content_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
+  CONSTRAINT `user_purchased_content_ibfk_2` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT,
+  CONSTRAINT `user_purchased_content_ibfk_3` FOREIGN KEY (`author_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '用户付费内容购买记录表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for user_sessions
@@ -347,7 +424,7 @@ CREATE TABLE `user_sessions`  (
   INDEX `idx_token`(`token` ASC) USING BTREE,
   INDEX `idx_expires_at`(`expires_at` ASC) USING BTREE,
   CONSTRAINT `user_sessions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 123 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '用户会话表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '用户会话表' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Table structure for users
@@ -385,6 +462,6 @@ CREATE TABLE `users`  (
   INDEX `idx_email`(`email` ASC) USING BTREE,
   INDEX `idx_created_at`(`created_at` ASC) USING BTREE,
   INDEX `idx_oauth2_id`(`oauth2_id` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 65 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '用户表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 54 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '用户表' ROW_FORMAT = Dynamic;
 
 SET FOREIGN_KEY_CHECKS = 1;

@@ -1,214 +1,253 @@
 const express = require('express')
 const router = express.Router()
 const { HTTP_STATUS, RESPONSE_CODES } = require('../constants')
-const { pool } = require('../config/config')
-const { createCrudHandlers } = require('../middleware/crudFactory')
-const { recordExists } = require('../utils/dbHelper')
+const { prisma } = require('../config/config')
 const { adminAuth } = require('../utils/uploadHelper')
-const {
-  validateLikeOrFavoriteData,
-  validateFollowData,
-  validateNotificationData
-} = require('../utils/validationHelpers')
+const { auditComment } = require('../utils/contentAudit')
+const { batchCleanupFiles } = require('../utils/fileCleanup')
+const crypto = require('crypto')
 
-// 创建笔记
-// Posts CRUD 配置
-const postsCrudConfig = {
-  table: 'posts',
-  name: '笔记',
-  requiredFields: ['user_id', 'title', 'content'],
-  updateFields: ['title', 'content', 'category_id', 'view_count', 'is_draft'],
-  cascadeRules: [
-    { table: 'post_images', field: 'post_id' },
-    { table: 'post_tags', field: 'post_id' },
-    { table: 'comments', field: 'post_id' },
-    { table: 'likes', field: 'target_id', condition: 'target_type = 1' },
-    { table: 'collections', field: 'post_id' }
-  ],
-  searchFields: {
-    title: { operator: 'LIKE' },
-    user_display_id: { operator: '=' },
-    category_id: { operator: '=' },
-    type: {
-      operator: '=',
-      transform: (value) => parseInt(value) // 将字符串转换为数字
-    },
-    is_draft: {
-      operator: '=',
-      transform: (value) => parseInt(value) // 将字符串转换为数字
+// ===================== AI审核设置 =====================
+let aiAutoReviewEnabled = false
+router.get('/ai-review-status', adminAuth, (req, res) => {
+  res.json({ code: RESPONSE_CODES.SUCCESS, data: { enabled: aiAutoReviewEnabled }, message: 'success' })
+})
+router.post('/ai-review-toggle', adminAuth, (req, res) => {
+  const { enabled } = req.body
+  aiAutoReviewEnabled = Boolean(enabled)
+  res.json({ code: RESPONSE_CODES.SUCCESS, message: `AI自动审核已${aiAutoReviewEnabled ? '开启' : '关闭'}` })
+})
+const isAiAutoReviewEnabled = () => aiAutoReviewEnabled
+
+// ===================== 笔记管理 =====================
+router.get('/posts', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { title, user_display_id, category_id, type, is_draft, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (title) where.title = { contains: title }
+    if (category_id) {
+      if (category_id === 'null') {
+        where.category_id = null
+      } else {
+        where.category_id = parseInt(category_id)
+      }
     }
-  },
-  allowedSortFields: ['id', 'view_count', 'like_count', 'collect_count', 'comment_count', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
+    if (type !== undefined && type !== '') where.type = parseInt(type)
+    if (is_draft !== undefined && is_draft !== '') where.is_draft = parseInt(is_draft) === 1
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
 
-  // 创建前的自定义验证和处理
-  beforeCreate: async (data, req) => {
-    const { user_id, images, image_urls, tags } = data
+    const [total, posts] = await Promise.all([
+      prisma.post.count({ where }),
+      prisma.post.findMany({
+        where,
+        include: {
+          user: { select: { id: true, user_id: true, nickname: true } },
+          category: { select: { name: true } },
+          images: { select: { image_url: true } },
+          tags: { include: { tag: { select: { id: true, name: true } } } }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
 
-    // 检查用户是否存在
-    const [userResult] = await pool.execute('SELECT id FROM users WHERE id = ?', [String(user_id)])
-    if (userResult.length === 0) {
-      throw new Error('用户不存在')
+    const formattedPosts = posts.map(post => ({
+      id: Number(post.id),
+      user_id: Number(post.user_id),
+      title: post.title,
+      content: post.content,
+      category_id: post.category_id,
+      category: post.category?.name,
+      type: post.type,
+      view_count: Number(post.view_count),
+      like_count: post.like_count,
+      collect_count: post.collect_count,
+      comment_count: post.comment_count,
+      created_at: post.created_at,
+      is_draft: post.is_draft,
+      user_display_id: post.user?.user_id,
+      nickname: post.user?.nickname,
+      images: post.images.map(img => img.image_url),
+      tags: post.tags.map(pt => ({ id: pt.tag.id, name: pt.tag.name }))
+    }))
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: formattedPosts, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取笔记列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.get('/posts/:id', adminAuth, async (req, res) => {
+  try {
+    const postId = BigInt(req.params.id)
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      include: {
+        user: { select: { id: true, user_id: true, nickname: true } },
+        category: { select: { name: true } },
+        images: { select: { id: true, image_url: true, is_free_preview: true } },
+        videos: { select: { id: true, video_url: true, cover_url: true } },
+        tags: { include: { tag: { select: { id: true, name: true } } } },
+        paymentSettings: true
+      }
+    })
+
+    if (!post) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
     }
 
-    // 确保分类ID存在
-    if (!data.category_id) {
-      data.category_id = null
+    const result = {
+      id: Number(post.id),
+      user_id: Number(post.user_id),
+      title: post.title,
+      content: post.content,
+      type: post.type,
+      category_id: post.category_id,
+      category: post.category?.name,
+      view_count: Number(post.view_count),
+      like_count: post.like_count,
+      collect_count: post.collect_count,
+      comment_count: post.comment_count,
+      is_draft: post.is_draft,
+      created_at: post.created_at,
+      nickname: post.user?.nickname,
+      user_display_id: post.user?.user_id,
+      tags: post.tags.map(pt => ({ id: pt.tag.id, name: pt.tag.name })),
+      images: post.type === 2 
+        ? (post.videos.length > 0 ? [post.videos[0].video_url] : [])
+        : post.images.map(img => img.image_url),
+      video_url: post.videos.length > 0 ? post.videos[0].video_url : null,
+      cover_url: post.videos.length > 0 ? post.videos[0].cover_url : null
     }
 
-    return data
-  },
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: result, message: 'success' })
+  } catch (error) {
+    console.error('获取笔记详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
 
-  // 创建后的处理（处理图片和标签）
-  afterCreate: async (postId, data, req) => {
-    const { images, image_urls, tags } = data
-    // 处理图片信息
-    if (images !== undefined || image_urls !== undefined) {
-      // 收集所有有效的图片URL
-      const allImages = []
-      // 处理images字段
-      if (images && Array.isArray(images)) {
-        for (const image of images) {
-          if (typeof image === 'string') {
-            allImages.push(image)
-          } else if (image && typeof image === 'object') {
-            const possibleUrlProps = ['url', 'preview', 'src', 'path', 'link']
-            for (const prop of possibleUrlProps) {
-              if (image[prop] && typeof image[prop] === 'string') {
-                allImages.push(image[prop])
-                break
-              }
+router.post('/posts', adminAuth, async (req, res) => {
+  try {
+    const { user_id, title, content, category_id, images, image_urls, tags, type, is_draft } = req.body
+
+    if (!user_id || !title || !content) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: BigInt(user_id) } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+
+    const post = await prisma.post.create({
+      data: {
+        user_id: BigInt(user_id),
+        title,
+        content,
+        category_id: category_id ? parseInt(category_id) : null,
+        type: type || 1,
+        is_draft: is_draft !== undefined ? Boolean(is_draft) : true
+      }
+    })
+
+    const allImages = []
+    if (images && Array.isArray(images)) {
+      for (const image of images) {
+        if (typeof image === 'string') {
+          allImages.push(image)
+        } else if (image && typeof image === 'object') {
+          const possibleProps = ['url', 'preview', 'src', 'path', 'link']
+          for (const prop of possibleProps) {
+            if (image[prop] && typeof image[prop] === 'string') {
+              allImages.push(image[prop])
+              break
             }
           }
         }
       }
-
-      // 处理image_urls字段
-      if (image_urls && Array.isArray(image_urls)) {
-        const validUrls = image_urls.filter(url =>
-          url &&
-          typeof url === 'string'
-        )
-        allImages.push(...validUrls)
-      }
-
-      // 插入图片
-      if (allImages.length > 0) {
-        for (const imageUrl of allImages) {
-          const cleanUrl = imageUrl ? imageUrl.trim().replace(/\`/g, '').replace(/\s+/g, '') : ''
-          if (cleanUrl) {
-            await pool.execute(
-              'INSERT INTO post_images (post_id, image_url) VALUES (?, ?)',
-              [String(postId), cleanUrl]
-            )
-          }
-        }
-      }
+    }
+    if (image_urls && Array.isArray(image_urls)) {
+      allImages.push(...image_urls.filter(url => url && typeof url === 'string'))
     }
 
-    // 处理标签
+    if (allImages.length > 0) {
+      await prisma.postImage.createMany({
+        data: allImages.map(url => ({
+          post_id: post.id,
+          image_url: url.trim().replace(/\`/g, '').replace(/\s+/g, '')
+        }))
+      })
+    }
+
     if (tags && tags.length > 0) {
       for (const tag of tags) {
         let tagId
-        let tagName
+        let tagName = typeof tag === 'string' ? tag : tag.name
 
-        // 处理字符串格式的标签
-        if (typeof tag === 'string') {
-          tagName = tag
-          // 查找现有标签
-          const [existingTag] = await pool.execute(
-            'SELECT id FROM tags WHERE name = ?',
-            [tagName]
-          )
-
-          if (existingTag.length > 0) {
-            tagId = String(existingTag[0].id)
-          } else {
-            // 创建新标签
-            const [tagResult] = await pool.execute(
-              'INSERT INTO tags (name) VALUES (?)',
-              [tagName]
-            )
-            tagId = String(tagResult.insertId)
-          }
+        const existingTag = await prisma.tag.findUnique({ where: { name: tagName } })
+        if (existingTag) {
+          tagId = existingTag.id
         } else {
-          // 处理对象格式的标签（向后兼容）
-          tagId = tag.id
-          tagName = tag.name
-
-          // 如果是新标签，先创建标签
-          if (tag.is_new || String(tag.id).startsWith('temp_')) {
-            const [existingTag] = await pool.execute(
-              'SELECT id FROM tags WHERE name = ?',
-              [tag.name]
-            )
-
-            if (existingTag.length > 0) {
-              tagId = String(existingTag[0].id)
-            } else {
-              const [tagResult] = await pool.execute(
-                'INSERT INTO tags (name) VALUES (?)',
-                [tag.name]
-              )
-              tagId = String(tagResult.insertId)
-            }
-          }
+          const newTag = await prisma.tag.create({ data: { name: tagName } })
+          tagId = newTag.id
         }
 
-        // 关联笔记和标签
-        await pool.execute(
-          'INSERT INTO post_tags (post_id, tag_id) VALUES (?, ?)',
-          [String(postId), String(tagId)]
-        )
-
-        // 更新标签使用次数
-        await pool.execute(
-          'UPDATE tags SET use_count = use_count + 1 WHERE id = ?',
-          [String(tagId)]
-        )
+        await prisma.postTag.create({ data: { post_id: post.id, tag_id: tagId } })
+        await prisma.tag.update({ where: { id: tagId }, data: { use_count: { increment: 1 } } })
       }
     }
-  },
 
-  // 更新前的处理
-  beforeUpdate: async (data, req, id) => {
-    // 确保浏览量不为负数
-    if (data.view_count !== undefined && data.view_count !== null) {
-      data.view_count = Math.max(0, parseInt(data.view_count) || 0)
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(post.id) }, message: '笔记创建成功' })
+  } catch (error) {
+    console.error('创建笔记失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/posts/:id', adminAuth, async (req, res) => {
+  try {
+    const postId = BigInt(req.params.id)
+    const { title, content, category_id, view_count, is_draft, images, image_urls, tags, video_url, cover_url, video } = req.body
+
+    const existingPost = await prisma.post.findUnique({ where: { id: postId }, include: { videos: true } })
+    if (!existingPost) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
     }
 
-    return { isValid: true }
-  },
+    const updateData = {}
+    if (title !== undefined) updateData.title = title
+    if (content !== undefined) updateData.content = content
+    if (category_id !== undefined) updateData.category_id = category_id ? parseInt(category_id) : null
+    if (view_count !== undefined) updateData.view_count = BigInt(Math.max(0, parseInt(view_count) || 0))
+    if (is_draft !== undefined) updateData.is_draft = Boolean(is_draft)
 
-  // 更新后的处理（处理图片和标签）
-  afterUpdate: async (postId, data, req) => {
-    const { images, image_urls, tags } = data
+    await prisma.post.update({ where: { id: postId }, data: updateData })
 
-    // 更新图片信息
     if (images !== undefined || image_urls !== undefined) {
-      // 删除原有图片
-      await pool.execute('DELETE FROM post_images WHERE post_id = ?', [String(postId)])
+      await prisma.postImage.deleteMany({ where: { post_id: postId } })
 
-      // 使用Set来避免重复的图片URL
       const allImagesSet = new Set()
-
-      // 处理image_urls字段
       if (image_urls && Array.isArray(image_urls)) {
-        for (const url of image_urls) {
-          if (url && typeof url === 'string') {
-            allImagesSet.add(url)
-          }
-        }
+        image_urls.forEach(url => { if (url && typeof url === 'string') allImagesSet.add(url) })
       }
-
-      // 处理images字段
       if (images && Array.isArray(images)) {
         for (const image of images) {
           if (typeof image === 'string') {
             allImagesSet.add(image)
           } else if (image && typeof image === 'object') {
-            const possibleUrlProps = ['url', 'preview', 'src', 'path', 'link']
-            for (const prop of possibleUrlProps) {
+            const possibleProps = ['url', 'preview', 'src', 'path', 'link']
+            for (const prop of possibleProps) {
               if (image[prop] && typeof image[prop] === 'string') {
                 allImagesSet.add(image[prop])
                 break
@@ -218,2072 +257,2326 @@ const postsCrudConfig = {
         }
       }
 
-      // 插入新图片
       const allImages = Array.from(allImagesSet)
       if (allImages.length > 0) {
-        for (const imageUrl of allImages) {
-          const cleanUrl = imageUrl ? imageUrl.trim().replace(/\`/g, '').replace(/\s+/g, '') : ''
-          if (cleanUrl) {
-            await pool.execute(
-              'INSERT INTO post_images (post_id, image_url) VALUES (?, ?)',
-              [postId, cleanUrl]
-            )
-          }
-        }
+        await prisma.postImage.createMany({
+          data: allImages.map(url => ({
+            post_id: postId,
+            image_url: url.trim().replace(/\`/g, '').replace(/\s+/g, '')
+          }))
+        })
       }
     }
 
-    // 处理视频更新 - 只要有任何视频相关字段就触发处理
-    const hasVideoUpdate = data.video_url !== undefined || data.cover_url !== undefined || data.video !== undefined
-    
+    const hasVideoUpdate = video_url !== undefined || cover_url !== undefined || video !== undefined
     if (hasVideoUpdate) {
-      // 获取原有视频记录用于清理文件
-      const [oldVideoRows] = await pool.execute('SELECT video_url, cover_url FROM post_videos WHERE post_id = ?', [String(postId)])
-      
-      // 删除原有视频记录
-      await pool.execute('DELETE FROM post_videos WHERE post_id = ?', [String(postId)])
+      const oldVideoUrls = existingPost.videos.map(v => v.video_url).filter(Boolean)
+      const oldCoverUrls = existingPost.videos.map(v => v.cover_url).filter(Boolean)
 
-      // 清理废弃的视频文件
-      if (oldVideoRows.length > 0) {
-        const { batchCleanupFiles } = require('../utils/fileCleanup')
-        const oldVideoUrls = oldVideoRows.map(row => row.video_url).filter(url => url)
-        const oldCoverUrls = oldVideoRows.map(row => row.cover_url).filter(url => url)
-        
-        // 异步清理文件，不阻塞响应
-        batchCleanupFiles(oldVideoUrls, oldCoverUrls).then(result => {
-          // 文件清理完成
-        }).catch(error => {
-          console.error('后台管理系统清理废弃视频文件失败:', error)
+      await prisma.postVideo.deleteMany({ where: { post_id: postId } })
+
+      let newVideoUrl = null
+      let newCoverUrl = null
+      if (video && video.url) {
+        newVideoUrl = video.url
+        newCoverUrl = video.coverUrl || ''
+      } else if (video_url && video_url.trim() !== '') {
+        newVideoUrl = video_url
+        newCoverUrl = cover_url || ''
+      }
+
+      if (newVideoUrl) {
+        await prisma.postVideo.create({
+          data: { post_id: postId, video_url: newVideoUrl, cover_url: newCoverUrl }
         })
       }
 
-      // 插入新视频记录 - 优先使用video对象，然后是分离字段
-      let videoUrl = null
-      let coverUrl = null
-      
-      if (data.video && data.video.url) {
-        // FormModal传递的video对象格式
-        videoUrl = data.video.url
-        coverUrl = data.video.coverUrl || ''
-      } else if (data.video_url && data.video_url.trim() !== '') {
-        // 分离字段格式
-        videoUrl = data.video_url
-        coverUrl = data.cover_url || ''
-      }
-      
-      if (videoUrl) {
-        await pool.execute(
-          'INSERT INTO post_videos (post_id, video_url, cover_url) VALUES (?, ?, ?)',
-          [postId, videoUrl, coverUrl]
-        )
-      }
+      batchCleanupFiles(oldVideoUrls, oldCoverUrls).catch(err => console.error('清理废弃视频文件失败:', err))
     }
 
-    // 更新标签信息
     if (tags !== undefined) {
-      // 获取原有标签，用于更新使用次数
-      const [oldTags] = await pool.execute(
-        'SELECT tag_id FROM post_tags WHERE post_id = ?',
-        [postId]
-      )
+      const oldTags = await prisma.postTag.findMany({ where: { post_id: postId } })
+      await prisma.postTag.deleteMany({ where: { post_id: postId } })
 
-      // 删除原有标签关联
-      await pool.execute('DELETE FROM post_tags WHERE post_id = ?', [postId])
-
-      // 减少原有标签的使用次数
       for (const oldTag of oldTags) {
-        await pool.execute(
-          'UPDATE tags SET use_count = GREATEST(use_count - 1, 0) WHERE id = ?',
-          [oldTag.tag_id]
-        )
+        await prisma.tag.update({
+          where: { id: oldTag.tag_id },
+          data: { use_count: { decrement: 1 } }
+        })
       }
 
-      // 处理新标签
       if (tags && tags.length > 0) {
         for (const tag of tags) {
           let tagId
-          let tagName
+          let tagName = typeof tag === 'string' ? tag : tag.name
 
-          // 处理字符串格式的标签
-          if (typeof tag === 'string') {
-            tagName = tag
-            // 查找现有标签
-            const [existingTag] = await pool.execute(
-              'SELECT id FROM tags WHERE name = ?',
-              [tagName]
-            )
-
-            if (existingTag.length > 0) {
-              tagId = existingTag[0].id
-            } else {
-              // 创建新标签
-              const [tagResult] = await pool.execute(
-                'INSERT INTO tags (name) VALUES (?)',
-                [tagName]
-              )
-              tagId = tagResult.insertId
-            }
+          if (typeof tag !== 'string' && (tag.is_new || String(tag.id).startsWith('temp_'))) {
+            const existingTag = await prisma.tag.findUnique({ where: { name: tagName } })
+            tagId = existingTag ? existingTag.id : (await prisma.tag.create({ data: { name: tagName } })).id
+          } else if (typeof tag === 'string') {
+            const existingTag = await prisma.tag.findUnique({ where: { name: tagName } })
+            tagId = existingTag ? existingTag.id : (await prisma.tag.create({ data: { name: tagName } })).id
           } else {
-            // 处理对象格式的标签（向后兼容）
             tagId = tag.id
-            tagName = tag.name
-
-            // 如果是新标签，先创建标签
-            if (tag.is_new || String(tag.id).startsWith('temp_')) {
-              const [existingTag] = await pool.execute(
-                'SELECT id FROM tags WHERE name = ?',
-                [tag.name]
-              )
-
-              if (existingTag.length > 0) {
-                tagId = existingTag[0].id
-              } else {
-                const [tagResult] = await pool.execute(
-                  'INSERT INTO tags (name) VALUES (?)',
-                  [tag.name]
-                )
-                tagId = tagResult.insertId
-              }
-            }
           }
 
-          // 关联笔记和标签
-          await pool.execute(
-            'INSERT INTO post_tags (post_id, tag_id) VALUES (?, ?)',
-            [String(postId), String(tagId)]
-          )
-
-          // 更新标签使用次数
-          await pool.execute(
-            'UPDATE tags SET use_count = use_count + 1 WHERE id = ?',
-            [String(tagId)]
-          )
+          await prisma.postTag.create({ data: { post_id: postId, tag_id: parseInt(tagId) } })
+          await prisma.tag.update({ where: { id: parseInt(tagId) }, data: { use_count: { increment: 1 } } })
         }
       }
     }
-  },
 
-  // 删除前的处理（减少标签使用次数）
-  beforeDelete: async (id) => {
-    // 获取笔记关联的标签，减少标签使用次数
-    const [tagResult] = await pool.execute(
-      'SELECT tag_id FROM post_tags WHERE post_id = ?',
-      [String(id)]
-    )
-
-    // 减少标签使用次数
-    for (const tag of tagResult) {
-      await pool.execute('UPDATE tags SET use_count = use_count - 1 WHERE id = ?', [String(tag.tag_id)])
-    }
-    // 返回验证结果
-    return { isValid: true }
-  },
-
-  // 批量删除前的处理
-  beforeDeleteMany: async (ids) => {
-    const placeholders = ids.map(() => '?').join(',')
-
-    // 获取所有笔记关联的标签，减少标签使用次数
-    const [tagResult] = await pool.execute(
-      `SELECT tag_id FROM post_tags WHERE post_id IN (${placeholders})`,
-      ids.map(id => String(id))
-    )
-
-    // 减少标签使用次数
-    for (const tag of tagResult) {
-      await pool.execute('UPDATE tags SET use_count = use_count - 1 WHERE id = ?', [String(tag.tag_id)])
-    }
-  },
-
-  // 自定义查询（获取详情和列表）
-  customQueries: {
-    getOne: async (req) => {
-      const postId = req.params.id
-
-      // 获取笔记基本信息
-      const [postResult] = await pool.execute(`
-        SELECT p.id, p.user_id, p.title, p.content, p.type, p.category_id, c.name as category,
-               p.view_count, p.like_count, p.collect_count, p.comment_count,
-               p.is_draft, p.created_at,
-               u.nickname, COALESCE(u.user_id, CONCAT('user', LPAD(u.id, 3, '0'))) as user_display_id
-        FROM posts p
-        LEFT JOIN users u ON p.user_id = u.id
-        LEFT JOIN categories c ON p.category_id = c.id
-        WHERE p.id = ?
-      `, [String(postId)])
-
-      if (postResult.length === 0) {
-        return null
-      }
-
-      const post = postResult[0]
-
-      // 根据笔记类型获取媒体信息
-      if (post.type === 2) {
-        // 视频笔记：获取视频信息
-        const [videos] = await pool.execute('SELECT video_url, cover_url FROM post_videos WHERE post_id = ?', [String(postId)])
-        if (videos.length > 0) {
-          post.video_url = videos[0].video_url
-          post.cover_url = videos[0].cover_url
-          post.images = [videos[0].video_url] // 将视频URL放入images数组以兼容现有逻辑
-        } else {
-          post.images = []
-        }
-      } else {
-        // 图文笔记：获取图片信息
-        const [images] = await pool.execute('SELECT image_url FROM post_images WHERE post_id = ?', [String(postId)])
-        post.images = images.map(img => img.image_url)
-      }
-
-      // 获取笔记标签
-      const [tags] = await pool.execute(`
-        SELECT t.id, t.name 
-        FROM tags t 
-        INNER JOIN post_tags pt ON t.id = pt.tag_id 
-        WHERE pt.post_id = ?
-      `, [String(postId)])
-      post.tags = tags
-
-      return post
-    },
-
-    getList: async (req) => {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
-
-      // 搜索条件
-      let whereClause = ''
-      const params = []
-
-      if (req.query.title) {
-        whereClause += ' WHERE p.title LIKE ?'
-        params.push(`%${req.query.title}%`)
-      }
-
-      if (req.query.user_display_id) {
-        whereClause += whereClause ? ' AND u.user_id LIKE ?' : ' WHERE u.user_id LIKE ?'
-        params.push(`%${req.query.user_display_id}%`)
-      }
-
-      if (req.query.category_id) {
-        if (req.query.category_id === 'null') {
-          whereClause += whereClause ? ' AND p.category_id IS NULL' : ' WHERE p.category_id IS NULL'
-        } else {
-          whereClause += whereClause ? ' AND p.category_id = ?' : ' WHERE p.category_id = ?'
-          params.push(req.query.category_id)
-        }
-      }
-
-      if (req.query.type !== undefined && req.query.type !== '') {
-        whereClause += whereClause ? ' AND p.type = ?' : ' WHERE p.type = ?'
-        params.push(req.query.type)
-      }
-
-      if (req.query.is_draft !== undefined && req.query.is_draft !== '') {
-        whereClause += whereClause ? ' AND p.is_draft = ?' : ' WHERE p.is_draft = ?'
-        params.push(req.query.is_draft)
-      }
-
-      // 获取总数
-      const countQuery = `
-        SELECT COUNT(*) as total 
-        FROM posts p 
-        LEFT JOIN users u ON p.user_id = u.id
-        LEFT JOIN categories c ON p.category_id = c.id
-        ${whereClause}
-      `
-      const [countResult] = await pool.execute(countQuery, params)
-      const total = countResult[0].total
-
-      // 排序处理 - 使用对象映射
-      const allowedSortFields = {
-        'id': 'p.id',
-        'title': 'p.title',
-        'view_count': 'p.view_count',
-        'like_count': 'p.like_count',
-        'collect_count': 'p.collect_count',
-        'comment_count': 'p.comment_count',
-        'created_at': 'p.created_at',
-        'nickname': 'u.nickname'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[req.query.sortField] || 'p.created_at'
-      const validSortOrder = allowedSortOrders[req.query.sortOrder?.toLowerCase()] || 'DESC'
-      const orderClause = `ORDER BY ${validSortField} ${validSortOrder}`
-
-      // 获取数据
-      const dataQuery = `
-        SELECT p.id, p.user_id, p.title, p.content, p.type, p.category_id, c.name as category,
-               p.view_count, p.like_count, p.collect_count, p.comment_count,
-               p.is_draft, p.created_at,
-               u.nickname, COALESCE(u.user_id, CONCAT('user', LPAD(u.id, 3, '0'))) as user_display_id
-        FROM posts p
-        LEFT JOIN users u ON p.user_id = u.id
-        LEFT JOIN categories c ON p.category_id = c.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ? OFFSET ?
-      `
-      const [posts] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
-
-      // 为每个笔记获取图片信息和标签信息
-      for (let post of posts) {
-        const [images] = await pool.execute('SELECT image_url FROM post_images WHERE post_id = ?', [String(post.id)])
-        post.images = images.map(img => img.image_url)
-
-        // 获取笔记标签
-        const [tags] = await pool.execute(`
-          SELECT t.id, t.name 
-          FROM tags t 
-          INNER JOIN post_tags pt ON t.id = pt.tag_id 
-          WHERE pt.post_id = ?
-        `, [String(post.id)])
-        post.tags = tags
-      }
-
-      return {
-        data: posts,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
-    }
-  }
-}
-
-const postsHandlers = createCrudHandlers(postsCrudConfig)
-
-// 注册 Posts CRUD 路由
-router.post('/posts', adminAuth, postsHandlers.create)
-router.put('/posts/:id', adminAuth, postsHandlers.update)
-router.delete('/posts/:id', adminAuth, postsHandlers.deleteOne)
-router.delete('/posts', adminAuth, postsHandlers.deleteMany)
-router.get('/posts/:id', adminAuth, async (req, res) => {
-  try {
-    const result = await postsCrudConfig.customQueries.getOne(req)
-    if (!result) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        code: RESPONSE_CODES.NOT_FOUND,
-        message: '笔记不存在'
-      })
-    }
-    res.json({
-      code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
-    })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '笔记更新成功' })
   } catch (error) {
-    console.error('获取笔记详情失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取笔记详情失败'
-    })
-  }
-})
-// 使用自定义查询覆盖默认的getList
-router.get('/posts', adminAuth, async (req, res) => {
-  try {
-    const result = await postsCrudConfig.customQueries.getList(req)
-    res.json({
-      code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
-    })
-  } catch (error) {
-    console.error('获取笔记列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取笔记列表失败'
-    })
+    console.error('更新笔记失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
   }
 })
 
-// 创建评论
-// ===== COMMENTS CRUD (使用工厂模式) =====
-const commentsCrudConfig = {
-  table: 'comments',
-  name: '评论',
-  requiredFields: ['user_id', 'post_id', 'content'],
-  updateFields: ['content'],
-  cascadeRules: [
-    { table: 'likes', field: 'target_id', condition: 'target_type = 2' },
-    { table: 'comments', field: 'parent_id' } // 删除子评论
-  ],
-  searchFields: {
-    post_id: { operator: '=' },
-    user_display_id: { operator: '=' },
-    content: { operator: 'LIKE' }
-  },
-  allowedSortFields: ['id', 'like_count', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义验证
-  beforeCreate: async (data) => {
-    const { user_id, post_id, parent_id } = data
-
-    // 检查用户是否存在
-    const [userResult] = await pool.execute('SELECT id FROM users WHERE id = ?', [String(user_id)])
-    if (userResult.length === 0) {
-      return { isValid: false, message: '用户不存在' }
+router.delete('/posts/:id', adminAuth, async (req, res) => {
+  try {
+    const postId = BigInt(req.params.id)
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      include: { images: true, videos: true, tags: true }
+    })
+    if (!post) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
     }
 
-    // 检查笔记是否存在
-    const [postResult] = await pool.execute('SELECT id FROM posts WHERE id = ?', [String(post_id)])
-    if (postResult.length === 0) {
-      return { isValid: false, message: '笔记不存在' }
+    for (const pt of post.tags) {
+      await prisma.tag.update({ where: { id: pt.tag_id }, data: { use_count: { decrement: 1 } } })
     }
 
-    // 如果是回复评论，检查父评论是否存在
-    if (parent_id) {
-      const [parentResult] = await pool.execute('SELECT id FROM comments WHERE id = ?', [String(parent_id)])
-      if (parentResult.length === 0) {
-        return { isValid: false, message: '父评论不存在' }
-      }
-    }
+    const filesToDelete = []
+    post.images.forEach(img => filesToDelete.push(img.image_url))
+    post.videos.forEach(v => { if (v.video_url) filesToDelete.push(v.video_url); if (v.cover_url) filesToDelete.push(v.cover_url) })
 
-    return { isValid: true }
-  },
+    await prisma.post.delete({ where: { id: postId } })
+    batchCleanupFiles(filesToDelete)
 
-  // 自定义查询（用于管理后台的复杂查询）
-  customQueries: {
-    getList: async (req) => {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
-
-      // 搜索条件
-      let whereClause = ''
-      const params = []
-
-      if (req.query.post_id) {
-        whereClause += ' WHERE c.post_id = ?'
-        params.push(req.query.post_id)
-      }
-
-      if (req.query.user_display_id) {
-        whereClause += whereClause ? ' AND u.user_id LIKE ?' : ' WHERE u.user_id LIKE ?'
-        params.push(`%${req.query.user_display_id}%`)
-      }
-
-      if (req.query.content) {
-        whereClause += whereClause ? ' AND c.content LIKE ?' : ' WHERE c.content LIKE ?'
-        params.push(`%${req.query.content}%`)
-      }
-
-      // 获取总数
-      const countQuery = `
-        SELECT COUNT(*) as total 
-        FROM comments c 
-        LEFT JOIN users u ON c.user_id = u.id
-        LEFT JOIN posts p ON c.post_id = p.id
-        ${whereClause}
-      `
-      const [countResult] = await pool.execute(countQuery, params)
-      const total = countResult[0].total
-
-      // 排序处理 - 使用对象映射
-      const allowedSortFields = {
-        'id': 'c.id',
-        'content': 'c.content',
-        'like_count': 'c.like_count',
-        'created_at': 'c.created_at',
-        'nickname': 'u.nickname'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[req.query.sortField] || 'c.created_at'
-      const validSortOrder = allowedSortOrders[req.query.sortOrder?.toLowerCase()] || 'DESC'
-      const orderClause = `ORDER BY ${validSortField} ${validSortOrder}`
-
-      // 获取数据
-      const dataQuery = `
-        SELECT c.id, c.content, c.parent_id, c.like_count, c.created_at,
-               c.user_id, u.nickname, 
-               COALESCE(u.user_id, CONCAT('user', LPAD(u.id, 3, '0'))) as user_display_id,
-               p.id as post_id, p.title as post_title
-        FROM comments c
-        LEFT JOIN users u ON c.user_id = u.id
-        LEFT JOIN posts p ON c.post_id = p.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ? OFFSET ?
-      `
-      const [comments] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
-
-      return {
-        data: comments,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
-    }
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除笔记失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
   }
-}
+})
 
-const commentsHandlers = createCrudHandlers(commentsCrudConfig)
+router.delete('/posts', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
 
-// 评论CRUD路由
-router.post('/comments', adminAuth, commentsHandlers.create)
-router.put('/comments/:id', adminAuth, commentsHandlers.update)
-router.delete('/comments/:id', adminAuth, commentsHandlers.deleteOne)
-router.delete('/comments', adminAuth, commentsHandlers.deleteMany)
-router.get('/comments/:id', adminAuth, commentsHandlers.getOne)
-// 使用自定义查询覆盖默认的getList
+    const postIds = ids.map(id => BigInt(id))
+
+    const postTags = await prisma.postTag.findMany({ where: { post_id: { in: postIds } } })
+    for (const pt of postTags) {
+      await prisma.tag.update({ where: { id: pt.tag_id }, data: { use_count: { decrement: 1 } } })
+    }
+
+    await prisma.post.deleteMany({ where: { id: { in: postIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除笔记失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 评论管理 =====================
 router.get('/comments', adminAuth, async (req, res) => {
   try {
-    const result = await commentsCrudConfig.customQueries.getList(req)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_display_id, post_id, content, audit_status, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+    if (post_id) where.post_id = BigInt(post_id)
+    if (content) where.content = { contains: content }
+    if (audit_status !== undefined && audit_status !== '') where.audit_status = parseInt(audit_status)
+
+    const [total, comments] = await Promise.all([
+      prisma.comment.count({ where }),
+      prisma.comment.findMany({
+        where,
+        include: {
+          user: { select: { id: true, user_id: true, nickname: true } },
+          post: { select: { id: true, title: true } }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedComments = comments.map(c => ({
+      id: Number(c.id),
+      post_id: Number(c.post_id),
+      user_id: Number(c.user_id),
+      parent_id: c.parent_id ? Number(c.parent_id) : null,
+      content: c.content,
+      like_count: c.like_count,
+      audit_status: c.audit_status,
+      is_public: c.is_public,
+      created_at: c.created_at,
+      user_display_id: c.user?.user_id,
+      nickname: c.user?.nickname,
+      post_title: c.post?.title
+    }))
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
+      data: { data: formattedComments, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
     })
   } catch (error) {
     console.error('获取评论列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取评论列表失败'
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.get('/comments/:id', adminAuth, async (req, res) => {
+  try {
+    const commentId = BigInt(req.params.id)
+    const comment = await prisma.comment.findUnique({
+      where: { id: commentId },
+      include: {
+        user: { select: { id: true, user_id: true, nickname: true } },
+        post: { select: { id: true, title: true } }
+      }
     })
-  }
-})
 
-// 创建标签
-// ==================== 标签管理（使用CRUD工厂重构） ====================
-
-// 标签CRUD配置
-const tagsCrudConfig = {
-  table: 'tags',
-  name: '标签',
-  requiredFields: ['name'],
-  updateFields: ['name', 'description'],
-  uniqueFields: ['name'],
-  cascadeRules: [
-    { table: 'post_tags', field: 'tag_id' }
-  ],
-  searchFields: {
-    name: { operator: 'LIKE' }
-  },
-  allowedSortFields: ['id', 'use_count', 'created_at'],
-  defaultOrderBy: 'created_at DESC'
-}
-
-// 生成标签CRUD处理器
-const tagsHandlers = createCrudHandlers(tagsCrudConfig)
-
-// 标签路由
-router.post('/tags', adminAuth, tagsHandlers.create)
-router.put('/tags/:id', adminAuth, tagsHandlers.update)
-router.delete('/tags/:id', adminAuth, tagsHandlers.deleteOne)
-router.delete('/tags', adminAuth, tagsHandlers.deleteMany)
-router.get('/tags/:id', adminAuth, tagsHandlers.getOne)
-router.get('/tags', adminAuth, tagsHandlers.getList)
-
-// ==================== 点赞管理（使用CRUD工厂重构） ====================
-
-// 点赞CRUD配置
-const likesCrudConfig = {
-  table: 'likes',
-  name: '点赞',
-  requiredFields: ['user_id', 'target_type', 'target_id'],
-  updateFields: ['target_type', 'target_id'],
-  searchFields: {
-    user_id: { operator: '=' },
-    target_type: { operator: '=' },
-    target_id: { operator: '=' }
-  },
-  allowedSortFields: ['id', 'user_id', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义验证逻辑
-  beforeCreate: async (data) => {
-    await validateLikeOrFavoriteData(data)
-
-    // 检查目标是否存在
-    const targetTable = data.target_type == 1 ? 'posts' : 'comments'
-    if (!(await recordExists(targetTable, 'id', data.target_id))) {
-      return {
-        isValid: false,
-        message: data.target_type == 1 ? '笔记不存在' : '评论不存在',
-        code: RESPONSE_CODES.NOT_FOUND
-      }
+    if (!comment) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '评论不存在' })
     }
 
-    return { isValid: true }
-  },
-
-  beforeUpdate: async (data) => {
-    await validateLikeOrFavoriteData(data)
-    return { isValid: true }
-  },
-
-  // 自定义查询（用于管理后台的复杂查询）
-  customQueries: {
-    getList: async (req) => {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
-
-      // 搜索条件
-      let whereClause = ''
-      const params = []
-
-      if (req.query.user_display_id) {
-        whereClause += whereClause ? ' AND u.user_id LIKE ?' : 'WHERE u.user_id LIKE ?'
-        params.push(`%${req.query.user_display_id}%`)
-      }
-
-      if (req.query.target_type) {
-        whereClause += whereClause ? ' AND l.target_type = ?' : 'WHERE l.target_type = ?'
-        params.push(req.query.target_type)
-      }
-
-      if (req.query.target_id) {
-        whereClause += whereClause ? ' AND l.target_id = ?' : 'WHERE l.target_id = ?'
-        params.push(req.query.target_id)
-      }
-
-      // 获取总数
-      const countQuery = `SELECT COUNT(*) as total FROM likes l LEFT JOIN users u ON l.user_id = u.id ${whereClause}`
-      const [countResult] = await pool.execute(countQuery, params)
-      const total = countResult[0].total
-
-      // 排序处理 - 使用对象映射
-      const allowedSortFields = {
-        'id': 'l.id',
-        'user_id': 'l.user_id',
-        'created_at': 'l.created_at'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[req.query.sortField] || 'l.created_at'
-      const validSortOrder = allowedSortOrders[req.query.sortOrder?.toLowerCase()] || 'DESC'
-      const orderClause = `ORDER BY ${validSortField} ${validSortOrder}`
-
-      // 获取数据
-      const dataQuery = `
-        SELECT l.id, l.user_id, l.target_type, l.target_id, l.created_at,
-               u.nickname, 
-               COALESCE(u.user_id, CONCAT('user', LPAD(u.id, 3, '0'))) as user_display_id
-        FROM likes l
-        LEFT JOIN users u ON l.user_id = u.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ? OFFSET ?
-      `
-      const [likes] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
-
-      return {
-        data: likes,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
-    }
-  }
-}
-
-// 生成点赞CRUD处理器
-const likesHandlers = createCrudHandlers(likesCrudConfig)
-
-// 临时测试接口 - 检查用户数据
-router.get('/test-users', adminAuth, async (req, res) => {
-  try {
-    const { pool } = require('../config/config')
-    const [users] = await pool.execute(
-      'SELECT id, user_id, nickname FROM users WHERE id IN (SELECT DISTINCT user_id FROM likes LIMIT 10)'
-    )
-    res.json({ code: RESPONSE_CODES.SUCCESS, data: users })
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: comment, message: 'success' })
   } catch (error) {
-    console.error('测试用户数据失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '服务器错误' })
+    console.error('获取评论详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
 })
 
-// 点赞路由
-router.post('/likes', adminAuth, likesHandlers.create)
-router.put('/likes/:id', adminAuth, likesHandlers.update)
-router.delete('/likes/:id', adminAuth, likesHandlers.deleteOne)
-router.delete('/likes', adminAuth, likesHandlers.deleteMany)
-router.get('/likes/:id', adminAuth, likesHandlers.getOne)
-// 使用自定义查询覆盖默认的getList
-router.get('/likes', adminAuth, async (req, res) => {
+router.post('/comments', adminAuth, async (req, res) => {
   try {
-    const result = await likesCrudConfig.customQueries.getList(req)
+    const { user_id, post_id, content, parent_id } = req.body
+
+    if (!user_id || !post_id || !content) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: BigInt(user_id) } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+
+    const post = await prisma.post.findUnique({ where: { id: BigInt(post_id) } })
+    if (!post) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
+    }
+
+    if (parent_id) {
+      const parent = await prisma.comment.findUnique({ where: { id: BigInt(parent_id) } })
+      if (!parent) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '父评论不存在' })
+      }
+    }
+
+    const comment = await prisma.comment.create({
+      data: {
+        user_id: BigInt(user_id),
+        post_id: BigInt(post_id),
+        content,
+        parent_id: parent_id ? BigInt(parent_id) : null
+      }
+    })
+
+    await prisma.post.update({ where: { id: BigInt(post_id) }, data: { comment_count: { increment: 1 } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(comment.id) }, message: '评论创建成功' })
+  } catch (error) {
+    console.error('创建评论失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/comments/:id', adminAuth, async (req, res) => {
+  try {
+    const commentId = BigInt(req.params.id)
+    const { content } = req.body
+
+    const comment = await prisma.comment.findUnique({ where: { id: commentId } })
+    if (!comment) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '评论不存在' })
+    }
+
+    await prisma.comment.update({ where: { id: commentId }, data: { content } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新评论失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/comments/:id', adminAuth, async (req, res) => {
+  try {
+    const commentId = BigInt(req.params.id)
+    const comment = await prisma.comment.findUnique({ where: { id: commentId }, select: { post_id: true } })
+    if (!comment) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '评论不存在' })
+    }
+
+    await prisma.comment.delete({ where: { id: commentId } })
+    await prisma.post.update({ where: { id: comment.post_id }, data: { comment_count: { decrement: 1 } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除评论失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/comments', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const commentIds = ids.map(id => BigInt(id))
+    await prisma.comment.deleteMany({ where: { id: { in: commentIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除评论失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 标签管理 =====================
+router.get('/tags', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { name, sortField = 'use_count', sortOrder = 'desc' } = req.query
+
+    const where = name ? { name: { contains: name } } : {}
+
+    const [total, tags] = await Promise.all([
+      prisma.tag.count({ where }),
+      prisma.tag.findMany({
+        where,
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
+      data: { data: tags, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取标签列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.get('/tags/:id', adminAuth, async (req, res) => {
+  try {
+    const tagId = parseInt(req.params.id)
+    const tag = await prisma.tag.findUnique({ where: { id: tagId } })
+
+    if (!tag) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '标签不存在' })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: tag, message: 'success' })
+  } catch (error) {
+    console.error('获取标签详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.post('/tags', adminAuth, async (req, res) => {
+  try {
+    const { name } = req.body
+    if (!name) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '标签名不能为空' })
+    }
+
+    const existing = await prisma.tag.findUnique({ where: { name } })
+    if (existing) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.CONFLICT, message: '标签已存在' })
+    }
+
+    const newTag = await prisma.tag.create({ data: { name } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: newTag.id }, message: '创建成功' })
+  } catch (error) {
+    console.error('创建标签失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/tags/:id', adminAuth, async (req, res) => {
+  try {
+    const tagId = parseInt(req.params.id)
+    const { name } = req.body
+
+    const tag = await prisma.tag.findUnique({ where: { id: tagId } })
+    if (!tag) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '标签不存在' })
+    }
+
+    const updateData = {}
+    if (name !== undefined) updateData.name = name
+
+    await prisma.tag.update({ where: { id: tagId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新标签失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/tags/:id', adminAuth, async (req, res) => {
+  try {
+    const tagId = parseInt(req.params.id)
+    await prisma.postTag.deleteMany({ where: { tag_id: tagId } })
+    await prisma.tag.delete({ where: { id: tagId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除标签失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/tags', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    await prisma.postTag.deleteMany({ where: { tag_id: { in: ids } } })
+    await prisma.tag.deleteMany({ where: { id: { in: ids } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除标签失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 点赞管理 =====================
+router.get('/likes', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_display_id, target_type, target_id, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+    if (target_type) where.target_type = parseInt(target_type)
+    if (target_id) where.target_id = BigInt(target_id)
+
+    const [total, likes] = await Promise.all([
+      prisma.like.count({ where }),
+      prisma.like.findMany({
+        where,
+        include: {
+          user: { select: { id: true, user_id: true, nickname: true } }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedLikes = likes.map(l => ({
+      id: Number(l.id),
+      user_id: Number(l.user_id),
+      target_type: l.target_type,
+      target_id: Number(l.target_id),
+      created_at: l.created_at,
+      user_display_id: l.user?.user_id,
+      nickname: l.user?.nickname
+    }))
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: formattedLikes, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
     })
   } catch (error) {
     console.error('获取点赞列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取点赞列表失败'
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
 })
 
-// 创建收藏
-// ==================== 收藏管理（使用CRUD工厂重构） ====================
+router.get('/likes/:id', adminAuth, async (req, res) => {
+  try {
+    const likeId = BigInt(req.params.id)
+    const like = await prisma.like.findUnique({
+      where: { id: likeId },
+      include: { user: { select: { id: true, user_id: true, nickname: true } } }
+    })
 
-// 收藏CRUD配置
-const collectionsCrudConfig = {
-  table: 'collections',
-  name: '收藏',
-  requiredFields: ['user_id', 'post_id'],
-  updateFields: ['post_id'],
-  searchFields: {
-    user_id: { operator: '=' },
-    post_id: { operator: '=' }
-  },
-  allowedSortFields: ['id', 'user_id', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义验证逻辑
-  beforeCreate: async (data) => {
-    // 检查用户是否存在
-    if (!(await recordExists('users', 'id', data.user_id))) {
-      return {
-        isValid: false,
-        message: '用户不存在',
-        code: RESPONSE_CODES.NOT_FOUND
-      }
+    if (!like) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '点赞记录不存在' })
     }
 
-    // 检查笔记是否存在
-    if (!(await recordExists('posts', 'id', data.post_id))) {
-      return {
-        isValid: false,
-        message: '笔记不存在',
-        code: RESPONSE_CODES.NOT_FOUND
-      }
-    }
-
-    // 检查是否已经收藏
-    const { pool } = require('../config/config')
-    const [existing] = await pool.execute(
-      'SELECT id FROM collections WHERE user_id = ? AND post_id = ?',
-      [String(data.user_id), String(data.post_id)]
-    )
-    if (existing.length > 0) {
-      return {
-        isValid: false,
-        message: '已经收藏过该笔记',
-        code: RESPONSE_CODES.CONFLICT
-      }
-    }
-
-    return { isValid: true }
-  },
-
-  beforeUpdate: async (data) => {
-    // 检查笔记是否存在
-    if (data.post_id && !(await recordExists('posts', 'id', data.post_id))) {
-      return {
-        isValid: false,
-        message: '笔记不存在',
-        code: RESPONSE_CODES.NOT_FOUND
-      }
-    }
-
-    return { isValid: true }
-  },
-
-  // 自定义查询（用于管理后台的复杂查询）
-  customQueries: {
-    getList: async (req) => {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
-
-      // 搜索条件
-      let whereClause = ''
-      const params = []
-
-      if (req.query.user_display_id) {
-        whereClause += whereClause ? ' AND u.user_id LIKE ?' : 'WHERE u.user_id LIKE ?'
-        params.push(`%${req.query.user_display_id}%`)
-      }
-
-      if (req.query.post_id) {
-        whereClause += whereClause ? ' AND c.post_id = ?' : 'WHERE c.post_id = ?'
-        params.push(req.query.post_id)
-      }
-
-      // 获取总数
-      const countQuery = `SELECT COUNT(*) as total FROM collections c LEFT JOIN users u ON c.user_id = u.id ${whereClause}`
-      const [countResult] = await pool.execute(countQuery, params)
-      const total = countResult[0].total
-
-      // 排序处理 - 使用对象映射
-      const allowedSortFields = {
-        'id': 'c.id',
-        'user_id': 'c.user_id',
-        'created_at': 'c.created_at'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[req.query.sortField] || 'c.created_at'
-      const validSortOrder = allowedSortOrders[req.query.sortOrder?.toLowerCase()] || 'DESC'
-      const orderClause = `ORDER BY ${validSortField} ${validSortOrder}`
-
-      // 获取数据
-      const dataQuery = `
-        SELECT c.id, c.user_id, c.post_id, c.created_at,
-               u.nickname, 
-               COALESCE(u.user_id, CONCAT('user', LPAD(u.id, 3, '0'))) as user_display_id,
-               p.title as post_title
-        FROM collections c
-        LEFT JOIN users u ON c.user_id = u.id
-        LEFT JOIN posts p ON c.post_id = p.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ? OFFSET ?
-      `
-      const [collections] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
-
-      return {
-        data: collections,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
-    }
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: like, message: 'success' })
+  } catch (error) {
+    console.error('获取点赞详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
-}
+})
 
-// 生成收藏CRUD处理器
-const collectionsHandlers = createCrudHandlers(collectionsCrudConfig)
+router.post('/likes', adminAuth, async (req, res) => {
+  try {
+    const { user_id, target_type, target_id } = req.body
 
-// 收藏路由
-router.post('/collections', adminAuth, collectionsHandlers.create)
-router.put('/collections/:id', adminAuth, collectionsHandlers.update)
-router.delete('/collections/:id', adminAuth, collectionsHandlers.deleteOne)
-router.delete('/collections', adminAuth, collectionsHandlers.deleteMany)
-router.get('/collections/:id', adminAuth, collectionsHandlers.getOne)
-// 使用自定义查询覆盖默认的getList
+    if (!user_id || !target_type || !target_id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: BigInt(user_id) } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+
+    // Check target exists
+    if (parseInt(target_type) === 1) {
+      const post = await prisma.post.findUnique({ where: { id: BigInt(target_id) } })
+      if (!post) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
+      }
+    } else {
+      const comment = await prisma.comment.findUnique({ where: { id: BigInt(target_id) } })
+      if (!comment) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '评论不存在' })
+      }
+    }
+
+    const like = await prisma.like.create({
+      data: {
+        user_id: BigInt(user_id),
+        target_type: parseInt(target_type),
+        target_id: BigInt(target_id)
+      }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(like.id) }, message: '点赞创建成功' })
+  } catch (error) {
+    console.error('创建点赞失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/likes/:id', adminAuth, async (req, res) => {
+  try {
+    const likeId = BigInt(req.params.id)
+    const { target_type, target_id } = req.body
+
+    const like = await prisma.like.findUnique({ where: { id: likeId } })
+    if (!like) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '点赞记录不存在' })
+    }
+
+    const updateData = {}
+    if (target_type !== undefined && target_type !== '') updateData.target_type = parseInt(target_type)
+    if (target_id !== undefined && target_id !== '') updateData.target_id = BigInt(target_id)
+
+    await prisma.like.update({ where: { id: likeId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新点赞失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/likes/:id', adminAuth, async (req, res) => {
+  try {
+    const likeId = BigInt(req.params.id)
+    await prisma.like.delete({ where: { id: likeId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除点赞失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/likes', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const likeIds = ids.map(id => BigInt(id))
+    await prisma.like.deleteMany({ where: { id: { in: likeIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除点赞失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 收藏管理 =====================
 router.get('/collections', adminAuth, async (req, res) => {
   try {
-    const result = await collectionsCrudConfig.customQueries.getList(req)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_display_id, post_id, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+    if (post_id) where.post_id = BigInt(post_id)
+
+    const [total, collections] = await Promise.all([
+      prisma.collection.count({ where }),
+      prisma.collection.findMany({
+        where,
+        include: {
+          user: { select: { id: true, user_id: true, nickname: true } },
+          post: { select: { id: true, title: true } }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedCollections = collections.map(c => ({
+      id: Number(c.id),
+      user_id: Number(c.user_id),
+      post_id: Number(c.post_id),
+      created_at: c.created_at,
+      user_display_id: c.user?.user_id,
+      nickname: c.user?.nickname,
+      post_title: c.post?.title
+    }))
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
+      data: { data: formattedCollections, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
     })
   } catch (error) {
     console.error('获取收藏列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取收藏列表失败'
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
 })
 
-// 创建关注
-// ==================== 关注管理（使用CRUD工厂重构） ====================
-
-// 关注CRUD配置
-const followsCrudConfig = {
-  table: 'follows',
-  name: '关注',
-  requiredFields: ['follower_id', 'following_id'],
-  updateFields: ['following_id'],
-  searchFields: {
-    follower_id: { operator: '=' },
-    following_id: { operator: '=' }
-  },
-  allowedSortFields: ['id', 'follower_id', 'following_id', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义验证逻辑
-  beforeCreate: async (data) => {
-    await validateFollowData(data)
-
-    // 检查是否已经关注
-    const { pool } = require('../config/config')
-    const [existing] = await pool.execute(
-      'SELECT id FROM follows WHERE follower_id = ? AND following_id = ?',
-      [String(data.follower_id), String(data.following_id)]
-    )
-    if (existing.length > 0) {
-      return {
-        isValid: false,
-        message: '已经关注过了',
-        code: RESPONSE_CODES.CONFLICT
+router.get('/collections/:id', adminAuth, async (req, res) => {
+  try {
+    const collectionId = BigInt(req.params.id)
+    const collection = await prisma.collection.findUnique({
+      where: { id: collectionId },
+      include: {
+        user: { select: { id: true, user_id: true, nickname: true } },
+        post: { select: { id: true, title: true } }
       }
+    })
+
+    if (!collection) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '收藏记录不存在' })
     }
 
-    return { isValid: true }
-  },
-
-  beforeUpdate: async (data, id) => {
-    if (data.following_id) {
-      // 获取当前记录的关注者ID
-      const { pool } = require('../config/config')
-      const [current] = await pool.execute('SELECT follower_id FROM follows WHERE id = ?', [String(id)])
-      if (current.length === 0) {
-        return {
-          isValid: false,
-          message: '关注记录不存在',
-          code: RESPONSE_CODES.NOT_FOUND
-        }
-      }
-
-      const updateData = {
-        follower_id: current[0].follower_id,
-        following_id: data.following_id
-      }
-      await validateFollowData(updateData)
-    }
-
-    return { isValid: true }
-  },
-
-  // 自定义查询（用于管理后台的复杂查询）
-  customQueries: {
-    getList: async (req) => {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
-
-      // 搜索条件
-      let whereClause = ''
-      const params = []
-
-      if (req.query.follower_display_id) {
-        // 根据关注者汐社号查找用户ID
-        const userQuery = 'SELECT id FROM users WHERE COALESCE(user_id, CONCAT(\'user\', LPAD(id, 3, \'0\'))) = ?'
-        const [userResult] = await pool.execute(userQuery, [req.query.follower_display_id])
-        if (userResult.length > 0) {
-          whereClause += whereClause ? ' AND f.follower_id = ?' : 'WHERE f.follower_id = ?'
-          params.push(userResult[0].id)
-        } else {
-          // 如果找不到用户，返回空结果
-          return {
-            data: [],
-            pagination: {
-              page: parseInt(req.query.page) || 1,
-              limit: parseInt(req.query.limit) || 20,
-              total: 0,
-              pages: 0
-            }
-          }
-        }
-      }
-
-      if (req.query.following_display_id) {
-        // 根据被关注者汐社号查找用户ID
-        const userQuery = 'SELECT id FROM users WHERE COALESCE(user_id, CONCAT(\'user\', LPAD(id, 3, \'0\'))) = ?'
-        const [userResult] = await pool.execute(userQuery, [req.query.following_display_id])
-        if (userResult.length > 0) {
-          whereClause += whereClause ? ' AND f.following_id = ?' : 'WHERE f.following_id = ?'
-          params.push(userResult[0].id)
-        } else {
-          // 如果找不到用户，返回空结果
-          return {
-            data: [],
-            pagination: {
-              page: parseInt(req.query.page) || 1,
-              limit: parseInt(req.query.limit) || 20,
-              total: 0,
-              pages: 0
-            }
-          }
-        }
-      }
-
-      // 获取总数
-      const countQuery = `SELECT COUNT(*) as total FROM follows f ${whereClause}`
-      const [countResult] = await pool.execute(countQuery, params)
-      const total = countResult[0].total
-
-      // 排序处理
-      const allowedSortFields = {
-        'id': 'f.id',
-        'follower_id': 'f.follower_id',
-        'following_id': 'f.following_id',
-        'created_at': 'f.created_at'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[req.query.sortField] || 'f.created_at'
-      const validSortOrder = allowedSortOrders[req.query.sortOrder?.toLowerCase()] || 'DESC'
-      const orderClause = `ORDER BY ${validSortField} ${validSortOrder}`
-
-      // 获取数据
-      const dataQuery = `
-        SELECT f.id, f.follower_id, f.following_id, f.created_at,
-               u1.nickname as follower_nickname, 
-               COALESCE(u1.user_id, CONCAT('user', LPAD(u1.id, 3, '0'))) as follower_display_id,
-               u2.nickname as following_nickname, 
-               COALESCE(u2.user_id, CONCAT('user', LPAD(u2.id, 3, '0'))) as following_display_id
-        FROM follows f
-        LEFT JOIN users u1 ON f.follower_id = u1.id
-        LEFT JOIN users u2 ON f.following_id = u2.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ? OFFSET ?
-      `
-      const [follows] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
-
-      return {
-        data: follows,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
-    }
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: collection, message: 'success' })
+  } catch (error) {
+    console.error('获取收藏详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
-}
+})
 
-// 生成关注CRUD处理器
-const followsHandlers = createCrudHandlers(followsCrudConfig)
+router.post('/collections', adminAuth, async (req, res) => {
+  try {
+    const { user_id, post_id } = req.body
 
-// 关注路由
-router.post('/follows', adminAuth, followsHandlers.create)
-router.put('/follows/:id', adminAuth, followsHandlers.update)
-router.delete('/follows/:id', adminAuth, followsHandlers.deleteOne)
-router.delete('/follows', adminAuth, followsHandlers.deleteMany)
-router.get('/follows/:id', adminAuth, followsHandlers.getOne)
-// 使用自定义查询覆盖默认的getList
+    if (!user_id || !post_id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: BigInt(user_id) } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+
+    const post = await prisma.post.findUnique({ where: { id: BigInt(post_id) } })
+    if (!post) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
+    }
+
+    const existing = await prisma.collection.findFirst({
+      where: { user_id: BigInt(user_id), post_id: BigInt(post_id) }
+    })
+    if (existing) {
+      return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: '已经收藏过该笔记' })
+    }
+
+    const collection = await prisma.collection.create({
+      data: { user_id: BigInt(user_id), post_id: BigInt(post_id) }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(collection.id) }, message: '收藏创建成功' })
+  } catch (error) {
+    console.error('创建收藏失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/collections/:id', adminAuth, async (req, res) => {
+  try {
+    const collectionId = BigInt(req.params.id)
+    const { post_id } = req.body
+
+    const collection = await prisma.collection.findUnique({ where: { id: collectionId } })
+    if (!collection) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '收藏记录不存在' })
+    }
+
+    if (post_id) {
+      const post = await prisma.post.findUnique({ where: { id: BigInt(post_id) } })
+      if (!post) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
+      }
+      await prisma.collection.update({ where: { id: collectionId }, data: { post_id: BigInt(post_id) } })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新收藏失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/collections/:id', adminAuth, async (req, res) => {
+  try {
+    const collectionId = BigInt(req.params.id)
+    await prisma.collection.delete({ where: { id: collectionId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除收藏失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/collections', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const collectionIds = ids.map(id => BigInt(id))
+    await prisma.collection.deleteMany({ where: { id: { in: collectionIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除收藏失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 关注管理 =====================
 router.get('/follows', adminAuth, async (req, res) => {
   try {
-    const result = await followsCrudConfig.customQueries.getList(req)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { follower_display_id, following_display_id, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (follower_display_id) where.follower = { user_id: follower_display_id }
+    if (following_display_id) where.following = { user_id: following_display_id }
+
+    const [total, follows] = await Promise.all([
+      prisma.follow.count({ where }),
+      prisma.follow.findMany({
+        where,
+        include: {
+          follower: { select: { id: true, user_id: true, nickname: true } },
+          following: { select: { id: true, user_id: true, nickname: true } }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedFollows = follows.map(f => ({
+      id: Number(f.id),
+      follower_id: Number(f.follower_id),
+      following_id: Number(f.following_id),
+      created_at: f.created_at,
+      follower_display_id: f.follower?.user_id,
+      follower_nickname: f.follower?.nickname,
+      following_display_id: f.following?.user_id,
+      following_nickname: f.following?.nickname
+    }))
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
+      data: { data: formattedFollows, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
     })
   } catch (error) {
     console.error('获取关注列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取关注列表失败'
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
 })
 
-// 通知管理 CRUD 配置
-const notificationsCrudConfig = {
-  table: 'notifications',
-  name: '通知',
-  requiredFields: ['user_id', 'sender_id', 'type', 'title'],
-  updateFields: ['user_id', 'sender_id', 'type', 'title', 'target_id', 'comment_id', 'is_read'],
-  searchFields: {
-    user_id: { operator: '=' },
-    type: { operator: '=' },
-    is_read: { operator: '=' }
-  },
-  allowedSortFields: ['id', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义查询（用于管理后台的复杂查询）
-  customQueries: {
-    getList: async (req) => {
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
-
-      // 搜索条件
-      let whereClause = ''
-      const params = []
-
-      if (req.query.user_display_id) {
-        whereClause += whereClause ? ' AND u1.user_id LIKE ?' : 'WHERE u1.user_id LIKE ?'
-        params.push(`%${req.query.user_display_id}%`)
+router.get('/follows/:id', adminAuth, async (req, res) => {
+  try {
+    const followId = BigInt(req.params.id)
+    const follow = await prisma.follow.findUnique({
+      where: { id: followId },
+      include: {
+        follower: { select: { id: true, user_id: true, nickname: true } },
+        following: { select: { id: true, user_id: true, nickname: true } }
       }
+    })
 
-      if (req.query.type) {
-        whereClause += whereClause ? ' AND n.type = ?' : 'WHERE n.type = ?'
-        params.push(req.query.type)
-      }
-
-      if (req.query.is_read !== undefined) {
-        whereClause += whereClause ? ' AND n.is_read = ?' : 'WHERE n.is_read = ?'
-        params.push(req.query.is_read)
-      }
-
-      // 获取总数
-      const countQuery = `SELECT COUNT(*) as total FROM notifications n LEFT JOIN users u1 ON n.user_id = u1.id ${whereClause}`
-      const [countResult] = await pool.execute(countQuery, params)
-      const total = countResult[0].total
-
-      // 排序处理 - 使用对象映射
-      const allowedSortFields = {
-        'id': 'n.id',
-        'created_at': 'n.created_at'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[req.query.sortField] || 'n.created_at'
-      const validSortOrder = allowedSortOrders[req.query.sortOrder?.toLowerCase()] || 'DESC'
-      const orderClause = `ORDER BY ${validSortField} ${validSortOrder}`
-
-      // 获取数据
-      const dataQuery = `
-        SELECT n.id, n.user_id, n.sender_id, n.type, n.title, n.target_id, n.comment_id, n.is_read, n.created_at,
-               u1.nickname as user_nickname, 
-               COALESCE(u1.user_id, CONCAT('user', LPAD(u1.id, 3, '0'))) as user_display_id,
-               u2.nickname as sender_nickname, 
-               COALESCE(u2.user_id, CONCAT('user', LPAD(u2.id, 3, '0'))) as sender_display_id
-        FROM notifications n
-        LEFT JOIN users u1 ON n.user_id = u1.id
-        LEFT JOIN users u2 ON n.sender_id = u2.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ? OFFSET ?
-      `
-      const [notifications] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
-
-      return {
-        data: notifications,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
+    if (!follow) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '关注记录不存在' })
     }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: follow, message: 'success' })
+  } catch (error) {
+    console.error('获取关注详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
-}
+})
 
-const notificationsHandlers = createCrudHandlers(notificationsCrudConfig)
+router.post('/follows', adminAuth, async (req, res) => {
+  try {
+    const { follower_id, following_id } = req.body
 
-// 通知管理路由
-router.post('/notifications', adminAuth, notificationsHandlers.create)
-router.put('/notifications/:id', adminAuth, notificationsHandlers.update)
-router.delete('/notifications/:id', adminAuth, notificationsHandlers.deleteOne)
-router.delete('/notifications', adminAuth, notificationsHandlers.deleteMany)
-router.get('/notifications/:id', adminAuth, notificationsHandlers.getOne)
-// 使用自定义查询覆盖默认的getList
+    if (!follower_id || !following_id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    if (follower_id === following_id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '不能关注自己' })
+    }
+
+    const follower = await prisma.user.findUnique({ where: { id: BigInt(follower_id) } })
+    if (!follower) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '关注者不存在' })
+    }
+
+    const following = await prisma.user.findUnique({ where: { id: BigInt(following_id) } })
+    if (!following) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '被关注者不存在' })
+    }
+
+    const existing = await prisma.follow.findFirst({
+      where: { follower_id: BigInt(follower_id), following_id: BigInt(following_id) }
+    })
+    if (existing) {
+      return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: '已经关注过了' })
+    }
+
+    const follow = await prisma.follow.create({
+      data: { follower_id: BigInt(follower_id), following_id: BigInt(following_id) }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(follow.id) }, message: '关注创建成功' })
+  } catch (error) {
+    console.error('创建关注失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/follows/:id', adminAuth, async (req, res) => {
+  try {
+    const followId = BigInt(req.params.id)
+    const { following_id } = req.body
+
+    const follow = await prisma.follow.findUnique({ where: { id: followId } })
+    if (!follow) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '关注记录不存在' })
+    }
+
+    if (following_id) {
+      if (BigInt(following_id) === follow.follower_id) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '不能关注自己' })
+      }
+      await prisma.follow.update({ where: { id: followId }, data: { following_id: BigInt(following_id) } })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新关注失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/follows/:id', adminAuth, async (req, res) => {
+  try {
+    const followId = BigInt(req.params.id)
+    await prisma.follow.delete({ where: { id: followId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除关注失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/follows', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const followIds = ids.map(id => BigInt(id))
+    await prisma.follow.deleteMany({ where: { id: { in: followIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除关注失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 通知管理 =====================
 router.get('/notifications', adminAuth, async (req, res) => {
   try {
-    const result = await notificationsCrudConfig.customQueries.getList(req)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_display_id, type, is_read, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+    if (type !== undefined && type !== '') where.type = parseInt(type)
+    if (is_read !== undefined && is_read !== '') where.is_read = is_read === 'true' || is_read === '1'
+
+    const [total, notifications] = await Promise.all([
+      prisma.notification.count({ where }),
+      prisma.notification.findMany({
+        where,
+        include: {
+          user: { select: { id: true, user_id: true, nickname: true } },
+          sender: { select: { id: true, user_id: true, nickname: true } }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedNotifications = notifications.map(n => ({
+      id: Number(n.id),
+      user_id: Number(n.user_id),
+      sender_id: Number(n.sender_id),
+      type: n.type,
+      title: n.title,
+      target_id: n.target_id ? Number(n.target_id) : null,
+      comment_id: n.comment_id ? Number(n.comment_id) : null,
+      is_read: n.is_read,
+      created_at: n.created_at,
+      user_display_id: n.user?.user_id,
+      user_nickname: n.user?.nickname,
+      sender_display_id: n.sender?.user_id,
+      sender_nickname: n.sender?.nickname
+    }))
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
+      data: { data: formattedNotifications, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
     })
   } catch (error) {
     console.error('获取通知列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取通知列表失败'
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
 })
 
-// 会话管理 CRUD 配置
-const sessionsCrudConfig = {
-  table: 'user_sessions',
-  name: '会话',
-  requiredFields: ['user_id'],
-  updateFields: ['user_agent', 'is_active'],
-  searchFields: {
-    user_id: { operator: '=' },
-    is_active: { operator: '=' }
-  },
-  allowedSortFields: ['id', 'is_active', 'expires_at', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义创建前验证
-  beforeCreate: async (data) => {
-    await validateNotificationData(data)
-
-    // 生成refresh_token
-    const crypto = require('crypto')
-    data.refresh_token = crypto.randomBytes(32).toString('hex')
-
-    // 设置过期时间（30天）
-    const expires_at = new Date()
-    expires_at.setDate(expires_at.getDate() + 30)
-    data.expires_at = expires_at
-
-    // 设置默认值
-    data.user_agent = data.user_agent || ''
-    data.is_active = data.is_active ? 1 : 0
-  },
-
-  // 自定义查询
-  customQueries: {
-    getList: async (req) => {
-      const { pool } = require('../config/config')
-      const page = parseInt(req.query.page) || 1
-      const limit = parseInt(req.query.limit) || 20
-      const offset = (page - 1) * limit
-
-      // 构建搜索条件
-      let whereClause = ''
-      const params = []
-
-      if (req.query.user_display_id) {
-        whereClause += whereClause ? ' AND u.user_id LIKE ?' : 'WHERE u.user_id LIKE ?'
-        params.push(`%${req.query.user_display_id}%`)
+router.get('/notifications/:id', adminAuth, async (req, res) => {
+  try {
+    const notificationId = BigInt(req.params.id)
+    const notification = await prisma.notification.findUnique({
+      where: { id: notificationId },
+      include: {
+        user: { select: { id: true, user_id: true, nickname: true } },
+        sender: { select: { id: true, user_id: true, nickname: true } }
       }
+    })
 
-      if (req.query.is_active !== undefined) {
-        whereClause += whereClause ? ' AND s.is_active = ?' : 'WHERE s.is_active = ?'
-        params.push(req.query.is_active)
-      }
-
-
-
-      // 获取总数
-      const countQuery = `SELECT COUNT(*) as total FROM user_sessions s LEFT JOIN users u ON s.user_id = u.id ${whereClause}`
-      const [countResult] = await pool.execute(countQuery, params)
-      const total = countResult[0].total
-
-      // 排序处理 - 使用对象映射
-      const allowedSortFields = {
-        'id': 's.id',
-        'is_active': 's.is_active',
-        'expires_at': 's.expires_at',
-        'created_at': 's.created_at'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[req.query.sortField] || 's.created_at'
-      const validSortOrder = allowedSortOrders[req.query.sortOrder?.toLowerCase()] || 'DESC'
-      const orderClause = `ORDER BY ${validSortField} ${validSortOrder}`
-
-      // 获取数据
-      const dataQuery = `
-        SELECT s.id, s.user_id, s.refresh_token, s.user_agent, s.is_active, s.expires_at, s.created_at,
-               u.nickname, 
-               COALESCE(u.user_id, CONCAT('user', LPAD(u.id, 3, '0'))) as user_display_id
-        FROM user_sessions s
-        LEFT JOIN users u ON s.user_id = u.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ? OFFSET ?
-      `
-      const [sessions] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
-
-      return {
-        data: sessions,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
+    if (!notification) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '通知不存在' })
     }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: notification, message: 'success' })
+  } catch (error) {
+    console.error('获取通知详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
-}
+})
 
-const sessionsHandlers = createCrudHandlers(sessionsCrudConfig)
+router.post('/notifications', adminAuth, async (req, res) => {
+  try {
+    const { user_id, sender_id, type, title, target_id, comment_id, is_read } = req.body
 
-// 会话管理路由
-router.post('/sessions', adminAuth, sessionsHandlers.create)
+    if (!user_id || !sender_id || !type || !title) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
 
-router.put('/sessions/:id', adminAuth, sessionsHandlers.update)
-router.delete('/sessions/:id', adminAuth, sessionsHandlers.deleteOne)
-router.delete('/sessions', adminAuth, sessionsHandlers.deleteMany)
-router.get('/sessions/:id', adminAuth, sessionsHandlers.getOne)
-// 使用自定义查询覆盖默认的getList
+    const notification = await prisma.notification.create({
+      data: {
+        user_id: BigInt(user_id),
+        sender_id: BigInt(sender_id),
+        type: parseInt(type),
+        title,
+        target_id: target_id ? BigInt(target_id) : null,
+        comment_id: comment_id ? BigInt(comment_id) : null,
+        is_read: is_read || false
+      }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(notification.id) }, message: '通知创建成功' })
+  } catch (error) {
+    console.error('创建通知失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/notifications/:id', adminAuth, async (req, res) => {
+  try {
+    const notificationId = BigInt(req.params.id)
+    const { user_id, sender_id, type, title, target_id, comment_id, is_read } = req.body
+
+    const notification = await prisma.notification.findUnique({ where: { id: notificationId } })
+    if (!notification) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '通知不存在' })
+    }
+
+    const updateData = {}
+    if (user_id !== undefined && user_id !== '') updateData.user_id = BigInt(user_id)
+    if (sender_id !== undefined && sender_id !== '') updateData.sender_id = BigInt(sender_id)
+    if (type !== undefined && type !== '') updateData.type = parseInt(type)
+    if (title !== undefined) updateData.title = title
+    if (target_id !== undefined) updateData.target_id = target_id ? BigInt(target_id) : null
+    if (comment_id !== undefined) updateData.comment_id = comment_id ? BigInt(comment_id) : null
+    if (is_read !== undefined && is_read !== '') updateData.is_read = Boolean(is_read)
+
+    await prisma.notification.update({ where: { id: notificationId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新通知失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/notifications/:id', adminAuth, async (req, res) => {
+  try {
+    const notificationId = BigInt(req.params.id)
+    await prisma.notification.delete({ where: { id: notificationId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除通知失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/notifications', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const notificationIds = ids.map(id => BigInt(id))
+    await prisma.notification.deleteMany({ where: { id: { in: notificationIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除通知失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 会话管理 =====================
 router.get('/sessions', adminAuth, async (req, res) => {
   try {
-    const result = await sessionsCrudConfig.customQueries.getList(req)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_display_id, is_active, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+    if (is_active !== undefined) where.is_active = is_active === 'true' || is_active === '1'
+
+    const [total, sessions] = await Promise.all([
+      prisma.userSession.count({ where }),
+      prisma.userSession.findMany({
+        where,
+        include: {
+          user: { select: { id: true, user_id: true, nickname: true } }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedSessions = sessions.map(s => ({
+      id: Number(s.id),
+      user_id: Number(s.user_id),
+      refresh_token: s.refresh_token,
+      user_agent: s.user_agent,
+      is_active: s.is_active,
+      expires_at: s.expires_at,
+      created_at: s.created_at,
+      user_display_id: s.user?.user_id,
+      nickname: s.user?.nickname
+    }))
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: 'success',
-      data: result
+      data: { data: formattedSessions, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
     })
   } catch (error) {
     console.error('获取会话列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取会话列表失败'
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
 })
 
+router.get('/sessions/:id', adminAuth, async (req, res) => {
+  try {
+    const sessionId = BigInt(req.params.id)
+    const session = await prisma.userSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        user: { select: { id: true, user_id: true, nickname: true } }
+      }
+    })
 
-
-// ===== USERS CRUD (使用工厂模式) =====
-const usersCrudConfig = {
-  table: 'users',
-  name: '用户',
-  requiredFields: ['user_id', 'nickname'],
-  updateFields: ['user_id', 'nickname', 'avatar', 'bio', 'location', 'is_active', 'gender', 'zodiac_sign', 'mbti', 'education', 'major', 'interests', 'verified'],
-  uniqueFields: ['user_id'],
-  cascadeRules: [
-    { table: 'posts', field: 'user_id' },
-    { table: 'comments', field: 'user_id' },
-    { table: 'likes', field: 'user_id' },
-    { table: 'collections', field: 'user_id' },
-    { table: 'follows', field: 'follower_id' },
-    { table: 'follows', field: 'following_id' },
-    { table: 'notifications', field: 'user_id' },
-    { table: 'user_sessions', field: 'user_id' }
-  ],
-  searchFields: {
-    user_id: { operator: 'LIKE' },
-    nickname: { operator: 'LIKE' },
-    location: { operator: 'LIKE' },
-    is_active: { operator: '=' }
-  },
-  allowedSortFields: ['id', 'fans_count', 'like_count', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义数据处理
-  beforeCreate: async (data) => {
-    // 处理interests字段（转换为JSON字符串）
-    if (data.interests) {
-      data.interests = Array.isArray(data.interests) ? JSON.stringify(data.interests) : data.interests
+    if (!session) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '会话不存在' })
     }
 
-    // 设置默认值
-    // 如果没有提供密码，设置默认哈希密码（123456的SHA256哈希值）
-    if (!data.password) {
-      // 使用MySQL的SHA2函数生成默认密码的哈希值
-      const [result] = await pool.execute('SELECT SHA2(?, 256) as hashed_password', [String('123456')])
-      data.password = result[0].hashed_password
-    } else {
-      // 如果提供了密码，进行哈希处理
-      const [result] = await pool.execute('SELECT SHA2(?, 256) as hashed_password', [String(data.password)])
-      data.password = result[0].hashed_password
-    }
-    data.avatar = data.avatar || ''
-    data.bio = data.bio || ''
-    data.location = data.location || ''
-    data.is_active = data.is_active ? 1 : 0
-
-    return { isValid: true }
-  },
-
-  beforeUpdate: async (data) => {
-    // 处理interests字段（转换为JSON字符串）
-    if (data.interests) {
-      data.interests = Array.isArray(data.interests) ? JSON.stringify(data.interests) : data.interests
-    }
-
-    // 处理is_active字段
-    if (data.is_active !== undefined) {
-      data.is_active = data.is_active ? 1 : 0
-    }
-
-    return { isValid: true }
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: session, message: 'success' })
+  } catch (error) {
+    console.error('获取会话详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
-}
+})
 
-const usersHandlers = createCrudHandlers(usersCrudConfig)
+router.post('/sessions', adminAuth, async (req, res) => {
+  try {
+    const { user_id, user_agent, is_active } = req.body
 
-// 用户CRUD路由
-router.post('/users', adminAuth, usersHandlers.create)
-router.put('/users/:id', adminAuth, usersHandlers.update)
-router.delete('/users/:id', adminAuth, usersHandlers.deleteOne)
-router.delete('/users', adminAuth, usersHandlers.deleteMany)
-router.get('/users/:id', adminAuth, usersHandlers.getOne)
-router.get('/users', adminAuth, usersHandlers.getList)
-
-// ===== ADMINS CRUD (使用工厂模式) =====
-const adminsCrudConfig = {
-  table: 'admin',
-  name: '管理员',
-  requiredFields: ['username', 'password'],
-  updateFields: ['password'],
-  uniqueFields: ['username'],
-  searchFields: {
-    username: { operator: 'LIKE' }
-  },
-  allowedSortFields: ['username', 'created_at'],
-  defaultOrderBy: 'created_at DESC',
-  primaryKey: 'username', // 使用username作为主键
-
-  // 创建前的自定义处理
-  beforeCreate: async (data) => {
-    // 对密码进行哈希加密
-    if (data.password) {
-      const [hashResult] = await pool.execute('SELECT SHA2(?, 256) as hashed_password', [data.password])
-      data.password = hashResult[0].hashed_password
+    if (!user_id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
     }
-    return { isValid: true }
-  },
 
-  // 更新前的自定义处理
-  beforeUpdate: async (data) => {
-    // 如果更新密码，进行哈希加密
-    if (data.password) {
-      const [hashResult] = await pool.execute('SELECT SHA2(?, 256) as hashed_password', [data.password])
-      data.password = hashResult[0].hashed_password
-    }
-    return { isValid: true }
+    const token = crypto.randomBytes(32).toString('hex')
+    const refresh_token = crypto.randomBytes(32).toString('hex')
+    const expires_at = new Date()
+    expires_at.setDate(expires_at.getDate() + 30)
+
+    const session = await prisma.userSession.create({
+      data: {
+        user_id: BigInt(user_id),
+        token,
+        refresh_token,
+        user_agent: user_agent || '',
+        is_active: is_active !== undefined ? Boolean(is_active) : true,
+        expires_at
+      }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(session.id) }, message: '会话创建成功' })
+  } catch (error) {
+    console.error('创建会话失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
   }
-}
+})
 
-const adminsHandlers = createCrudHandlers(adminsCrudConfig)
+router.put('/sessions/:id', adminAuth, async (req, res) => {
+  try {
+    const sessionId = BigInt(req.params.id)
+    const { user_agent, is_active } = req.body
 
-// 管理员CRUD路由
-router.post('/admins', adminAuth, adminsHandlers.create)
-router.put('/admins/:id', adminAuth, adminsHandlers.update)
-router.delete('/admins/:id', adminAuth, adminsHandlers.deleteOne)
-router.delete('/admins', adminAuth, adminsHandlers.deleteMany)
-router.get('/admins/:id', adminAuth, adminsHandlers.getOne)
-router.get('/admins', adminAuth, adminsHandlers.getList)
+    const session = await prisma.userSession.findUnique({ where: { id: sessionId } })
+    if (!session) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '会话不存在' })
+    }
 
-// 监控页面API - 获取最近动态
+    const updateData = {}
+    if (user_agent !== undefined) updateData.user_agent = user_agent
+    if (is_active !== undefined) updateData.is_active = Boolean(is_active)
+
+    await prisma.userSession.update({ where: { id: sessionId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新会话失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/sessions/:id', adminAuth, async (req, res) => {
+  try {
+    const sessionId = BigInt(req.params.id)
+    await prisma.userSession.delete({ where: { id: sessionId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除会话失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/sessions', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const sessionIds = ids.map(id => BigInt(id))
+    await prisma.userSession.deleteMany({ where: { id: { in: sessionIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除会话失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 用户管理 =====================
+router.get('/users', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_id, nickname, location, is_active, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (user_id) where.user_id = { contains: user_id }
+    if (nickname) where.nickname = { contains: nickname }
+    if (location) where.location = { contains: location }
+    if (is_active !== undefined && is_active !== '') where.is_active = parseInt(is_active) === 1
+
+    const [total, users] = await Promise.all([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true, user_id: true, nickname: true, avatar: true, bio: true,
+          location: true, email: true, follow_count: true, fans_count: true,
+          like_count: true, is_active: true, created_at: true, verified: true
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedUsers = users.map(u => ({ ...u, id: Number(u.id) }))
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: formattedUsers, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取用户列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.get('/users/:id', adminAuth, async (req, res) => {
+  try {
+    const userId = BigInt(req.params.id)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, user_id: true, nickname: true, avatar: true, bio: true,
+        location: true, email: true, follow_count: true, fans_count: true,
+        like_count: true, is_active: true, created_at: true, verified: true,
+        gender: true, zodiac_sign: true, mbti: true, education: true, major: true
+      }
+    })
+
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { ...user, id: Number(user.id) }, message: 'success' })
+  } catch (error) {
+    console.error('获取用户详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.post('/users', adminAuth, async (req, res) => {
+  try {
+    const { user_id, nickname, avatar, bio, location, is_active, password, gender, zodiac_sign, mbti, education, major, interests, verified } = req.body
+
+    if (!user_id || !nickname) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const existing = await prisma.user.findUnique({ where: { user_id } })
+    if (existing) {
+      return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: 'user_id已存在' })
+    }
+
+    // Hash password using SHA256
+    const hashedPassword = password 
+      ? crypto.createHash('sha256').update(password).digest('hex')
+      : crypto.createHash('sha256').update('123456').digest('hex')
+
+    const user = await prisma.user.create({
+      data: {
+        user_id,
+        nickname,
+        password: hashedPassword,
+        avatar: avatar || '',
+        bio: bio || '',
+        location: location || '',
+        is_active: is_active !== undefined ? Boolean(is_active) : true,
+        gender: gender || null,
+        zodiac_sign: zodiac_sign || null,
+        mbti: mbti || null,
+        education: education || null,
+        major: major || null,
+        interests: interests || null,
+        verified: verified || false
+      }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(user.id) }, message: '用户创建成功' })
+  } catch (error) {
+    console.error('创建用户失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/users/:id', adminAuth, async (req, res) => {
+  try {
+    const userId = BigInt(req.params.id)
+    const { user_id, nickname, avatar, bio, location, is_active, gender, zodiac_sign, mbti, education, major, interests, verified } = req.body
+
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+
+    const updateData = {}
+    if (user_id !== undefined) updateData.user_id = user_id
+    if (nickname !== undefined) updateData.nickname = nickname
+    if (avatar !== undefined) updateData.avatar = avatar
+    if (bio !== undefined) updateData.bio = bio
+    if (location !== undefined) updateData.location = location
+    if (is_active !== undefined) updateData.is_active = Boolean(is_active)
+    if (gender !== undefined) updateData.gender = gender
+    if (zodiac_sign !== undefined) updateData.zodiac_sign = zodiac_sign
+    if (mbti !== undefined) updateData.mbti = mbti
+    if (education !== undefined) updateData.education = education
+    if (major !== undefined) updateData.major = major
+    if (interests !== undefined) updateData.interests = interests
+    if (verified !== undefined) updateData.verified = Boolean(verified)
+
+    await prisma.user.update({ where: { id: userId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新用户失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/users/:id', adminAuth, async (req, res) => {
+  try {
+    const userId = BigInt(req.params.id)
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+
+    await prisma.user.delete({ where: { id: userId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除用户失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/users', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const userIds = ids.map(id => BigInt(id))
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除用户失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 管理员管理 =====================
+router.get('/admins', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { username, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = username ? { username: { contains: username } } : {}
+
+    const [total, admins] = await Promise.all([
+      prisma.admin.count({ where }),
+      prisma.admin.findMany({
+        where,
+        select: { id: true, username: true, created_at: true },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedAdmins = admins.map(a => ({ ...a, id: Number(a.id) }))
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: formattedAdmins, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取管理员列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.get('/admins/:id', adminAuth, async (req, res) => {
+  try {
+    const adminId = BigInt(req.params.id)
+    const admin = await prisma.admin.findUnique({
+      where: { id: adminId },
+      select: { id: true, username: true, created_at: true }
+    })
+
+    if (!admin) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '管理员不存在' })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { ...admin, id: Number(admin.id) }, message: 'success' })
+  } catch (error) {
+    console.error('获取管理员详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.post('/admins', adminAuth, async (req, res) => {
+  try {
+    const { username, password } = req.body
+
+    if (!username || !password) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const existing = await prisma.admin.findUnique({ where: { username } })
+    if (existing) {
+      return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: '用户名已存在' })
+    }
+
+    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex')
+
+    const admin = await prisma.admin.create({
+      data: { username, password: hashedPassword }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(admin.id) }, message: '管理员创建成功' })
+  } catch (error) {
+    console.error('创建管理员失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/admins/:id', adminAuth, async (req, res) => {
+  try {
+    const adminId = BigInt(req.params.id)
+    const { password } = req.body
+
+    const admin = await prisma.admin.findUnique({ where: { id: adminId } })
+    if (!admin) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '管理员不存在' })
+    }
+
+    if (password) {
+      const hashedPassword = crypto.createHash('sha256').update(password).digest('hex')
+      await prisma.admin.update({ where: { id: adminId }, data: { password: hashedPassword } })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新管理员失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/admins/:id', adminAuth, async (req, res) => {
+  try {
+    const adminId = BigInt(req.params.id)
+    await prisma.admin.delete({ where: { id: adminId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除管理员失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/admins', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const adminIds = ids.map(id => BigInt(id))
+    await prisma.admin.deleteMany({ where: { id: { in: adminIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除管理员失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// ===================== 监控动态 =====================
 router.get('/monitor/activities', adminAuth, async (req, res) => {
   try {
     const activities = []
 
-    // 获取最近10个新注册用户
-    const [newUsers] = await pool.execute(
-      `SELECT id, user_id, nickname, avatar, created_at, 'user_register' as type
-       FROM users
-       ORDER BY created_at DESC
-       LIMIT ?`,
-      ['10']
-    )
+    const [newUsers, newPosts, newComments] = await Promise.all([
+      prisma.user.findMany({
+        select: { id: true, user_id: true, nickname: true, avatar: true, created_at: true },
+        orderBy: { created_at: 'desc' },
+        take: 10
+      }),
+      prisma.post.findMany({
+        where: { is_draft: false },
+        select: { id: true, title: true, created_at: true, user: { select: { user_id: true, nickname: true, avatar: true } } },
+        orderBy: { created_at: 'desc' },
+        take: 10
+      }),
+      prisma.comment.findMany({
+        select: { 
+          id: true, content: true, post_id: true, created_at: true,
+          user: { select: { user_id: true, nickname: true, avatar: true } },
+          post: { select: { title: true } }
+        },
+        orderBy: { created_at: 'desc' },
+        take: 10
+      })
+    ])
 
-    // 获取最近10篇发布的笔记
-    const [newPosts] = await pool.execute(
-      `SELECT p.id, p.title, p.created_at, u.user_id, u.nickname, u.avatar, 'post_publish' as type
-       FROM posts p
-       LEFT JOIN users u ON p.user_id = u.id
-       WHERE p.is_draft = 0
-       ORDER BY p.created_at DESC
-       LIMIT ?`,
-      ['10']
-    )
-
-    // 获取最近10条评论
-    const [newComments] = await pool.execute(
-      `SELECT c.id, c.content, c.post_id, c.created_at, u.user_id, u.nickname, u.avatar, p.title as post_title, 'comment_publish' as type
-       FROM comments c
-       LEFT JOIN users u ON c.user_id = u.id
-       LEFT JOIN posts p ON c.post_id = p.id
-       ORDER BY c.created_at DESC
-       LIMIT ?`,
-      ['10']
-    )
-
-    // 合并所有动态
     newUsers.forEach(user => {
       activities.push({
-        id: `user_${user.id}`,
+        id: 'user_' + user.id,
         type: 'user_register',
         user_id: user.user_id,
         nickname: user.nickname,
         avatar: user.avatar,
-        title: `新用户注册`,
-        content: `用户 ${user.nickname} (${user.user_id}) 注册了账号`,
-        target_id: user.id,
+        title: '新用户注册',
+        content: '用户 ' + user.nickname + ' (' + user.user_id + ') 注册了账号',
+        target_id: Number(user.id),
         created_at: user.created_at
       })
     })
 
     newPosts.forEach(post => {
       activities.push({
-        id: `post_${post.id}`,
+        id: 'post_' + post.id,
         type: 'post_publish',
-        user_id: post.user_id,
-        nickname: post.nickname,
-        avatar: post.avatar,
+        user_id: post.user?.user_id,
+        nickname: post.user?.nickname,
+        avatar: post.user?.avatar,
         title: post.title,
-        content: `${post.nickname} 发布了笔记《${post.title}》`,
-        target_id: post.id,
+        content: post.user?.nickname + ' 发布了笔记《' + post.title + '》',
+        target_id: Number(post.id),
         created_at: post.created_at
       })
     })
 
     newComments.forEach(comment => {
       activities.push({
-        id: comment.id,
+        id: Number(comment.id),
         type: 'comment_publish',
-        user_id: comment.user_id,
-        nickname: comment.nickname,
-        avatar: comment.avatar,
-        title: comment.post_title,
-        content: comment.content, // 原始评论内容，用于CommentImage组件渲染
-        description: `${comment.nickname} 在《${comment.post_title}》中发表了评论`,
-        target_id: comment.post_id,
+        user_id: comment.user?.user_id,
+        nickname: comment.user?.nickname,
+        avatar: comment.user?.avatar,
+        title: comment.post?.title,
+        content: comment.content,
+        description: comment.user?.nickname + ' 在《' + comment.post?.title + '》中发表了评论',
+        target_id: Number(comment.post_id),
         created_at: comment.created_at
       })
     })
 
-    // 按时间降序排序
     activities.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
-    res.json({
-      code: RESPONSE_CODES.SUCCESS,
-      message: '获取动态成功',
-      data: activities
-    })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '获取动态成功', data: activities })
   } catch (error) {
     console.error('获取监控动态失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取动态失败',
-      error: error.message
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取动态失败', error: error.message })
   }
 })
 
-// 认证管理 CRUD 配置
-const auditCrudConfig = {
-  table: 'audit',
-  name: '认证管理',
-  requiredFields: ['user_id', 'type', 'content'],
-  updateFields: ['type', 'content', 'status', 'audit_time'],
-  searchFields: {
-    user_id: { operator: '=' },
-    type: { operator: '=' },
-    status: { operator: '=' },
-    user_display_id: { operator: '=' }
-  },
-  allowedSortFields: ['id', 'created_at', 'audit_time', 'status'],
-  defaultOrderBy: 'created_at DESC',
-
-  // 自定义查询，关联用户信息
-  customQueries: {
-    getList: async (req) => {
-      const { page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'DESC', ...filters } = req.query
-      const offset = (page - 1) * limit
-
-      // 构建查询条件
-      let whereClause = 'WHERE 1=1'
-      const queryParams = []
-      let paramIndex = 1
-
-      // 处理筛选条件
-      if (filters.user_id) {
-        whereClause += ` AND a.user_id = ?`
-        queryParams.push(filters.user_id)
-      }
-
-      if (filters.user_display_id) {
-        whereClause += ` AND u.user_id LIKE ?`
-        queryParams.push(`%${filters.user_display_id}%`)
-      }
-
-      if (filters.type) {
-        whereClause += ` AND a.type = ?`
-        queryParams.push(filters.type)
-      }
-
-      if (filters.status !== undefined && filters.status !== '') {
-        whereClause += ` AND a.status = ?`
-        queryParams.push(parseInt(filters.status))
-      }
-
-      // 构建排序
-      const validSortFields = ['id', 'created_at', 'audit_time', 'status']
-      const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at'
-      const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
-
-      // 查询数据
-      const dataQuery = `
-        SELECT 
-          a.id,
-          a.user_id,
-          a.type,
-          a.content,
-          a.status,
-          a.created_at,
-          a.audit_time,
-          u.user_id as user_display_id,
-          u.nickname,
-          u.avatar
-        FROM audit a
-        LEFT JOIN users u ON a.user_id = u.id
-        ${whereClause}
-        ORDER BY a.${sortField} ${order}
-        LIMIT ? OFFSET ?
-      `
-
-      // 查询总数
-      const countQuery = `
-        SELECT COUNT(*) as total
-        FROM audit a
-        LEFT JOIN users u ON a.user_id = u.id
-        ${whereClause}
-      `
-
-      queryParams.push(parseInt(limit), offset)
-
-      const [dataResult, countResult] = await Promise.all([
-        pool.query(dataQuery, queryParams),
-        pool.query(countQuery, queryParams.slice(0, -2))
-      ])
-
-      return {
-        data: dataResult[0],
-        total: parseInt(countResult[0][0].total),
-        page: parseInt(page),
-        limit: parseInt(limit)
-      }
-    },
-
-    getOne: async (req) => {
-      const { id } = req.params
-
-      const query = `
-        SELECT 
-          a.id,
-          a.user_id,
-          a.type,
-          a.content,
-          a.status,
-          a.created_at,
-          a.audit_time,
-          u.user_id as user_display_id,
-          u.nickname,
-          u.avatar
-        FROM audit a
-        LEFT JOIN users u ON a.user_id = u.id
-        WHERE a.id = ?
-      `
-
-      const result = await pool.query(query, [id])
-      return result[0][0] || null
-    }
-  }
-}
-
-const auditHandlers = createCrudHandlers(auditCrudConfig)
-
-// 认证管理路由
-router.post('/audit', adminAuth, auditHandlers.create)
-router.put('/audit/:id', adminAuth, auditHandlers.update)
-router.delete('/audit/:id', adminAuth, auditHandlers.deleteOne)
-router.delete('/audit', adminAuth, auditHandlers.deleteMany)
-router.get('/audit/:id', adminAuth, async (req, res) => {
+// ===================== 测试用户接口 =====================
+router.get('/test-users', adminAuth, async (req, res) => {
   try {
-    const result = await auditCrudConfig.customQueries.getOne(req)
-    if (!result) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        code: RESPONSE_CODES.NOT_FOUND,
-        message: '认证记录不存在'
-      })
-    }
-    res.json({
-      code: RESPONSE_CODES.SUCCESS,
-      message: '获取认证记录成功',
-      data: result
+    const likes = await prisma.like.findMany({ select: { user_id: true }, distinct: ['user_id'], take: 10 })
+    const userIds = likes.map(l => l.user_id)
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, user_id: true, nickname: true }
     })
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: users.map(u => ({ ...u, id: Number(u.id) })) })
   } catch (error) {
-    console.error('获取认证记录失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取认证记录失败',
-      error: error.message
-    })
+    console.error('测试用户数据失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '服务器错误' })
   }
 })
 
+// ===================== 审核管理 (认证审核 type 1,2) =====================
 router.get('/audit', adminAuth, async (req, res) => {
   try {
-    const result = await auditCrudConfig.customQueries.getList(req)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_id, user_display_id, type, status, sortBy = 'created_at', sortOrder = 'DESC' } = req.query
+
+    const where = { type: { in: [1, 2] } }
+    if (user_id) where.user_id = BigInt(user_id)
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+    if (type) where.type = parseInt(type)
+    if (status !== undefined && status !== '') where.status = parseInt(status)
+
+    const [total, audits] = await Promise.all([
+      prisma.audit.count({ where }),
+      prisma.audit.findMany({
+        where,
+        include: { user: { select: { id: true, user_id: true, nickname: true, avatar: true } } },
+        orderBy: { [sortBy]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedAudits = audits.map(a => ({
+      id: Number(a.id),
+      user_id: Number(a.user_id),
+      type: a.type,
+      target_id: a.target_id ? Number(a.target_id) : null,
+      content: a.content,
+      risk_level: a.risk_level,
+      categories: a.categories,
+      reason: a.reason,
+      status: a.status,
+      created_at: a.created_at,
+      audit_time: a.audit_time,
+      user_display_id: a.user?.user_id,
+      nickname: a.user?.nickname,
+      avatar: a.user?.avatar
+    }))
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
       message: '获取认证列表成功',
-      data: result
+      data: { data: formattedAudits, total, page, limit }
     })
   } catch (error) {
     console.error('获取认证列表失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '获取认证列表失败',
-      error: error.message
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取认证列表失败', error: error.message })
   }
 })
 
-// 审核通过
+router.get('/audit/:id', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+    const audit = await prisma.audit.findFirst({
+      where: { id: auditId, type: { in: [1, 2] } },
+      include: { user: { select: { id: true, user_id: true, nickname: true, avatar: true } } }
+    })
+
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '认证记录不存在' })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '获取认证记录成功', data: audit })
+  } catch (error) {
+    console.error('获取认证记录失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取认证记录失败', error: error.message })
+  }
+})
+
+router.post('/audit', adminAuth, async (req, res) => {
+  try {
+    const { user_id, type, content } = req.body
+
+    if (!user_id || !type || !content) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const audit = await prisma.audit.create({
+      data: {
+        user_id: BigInt(user_id),
+        type: parseInt(type),
+        content,
+        status: 0
+      }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(audit.id) }, message: '审核创建成功' })
+  } catch (error) {
+    console.error('创建审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/audit/:id', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+    const { type, content, status, audit_time } = req.body
+
+    const audit = await prisma.audit.findUnique({ where: { id: auditId } })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '审核记录不存在' })
+    }
+
+    const updateData = {}
+    if (type !== undefined && type !== '') updateData.type = parseInt(type)
+    if (content !== undefined) updateData.content = content
+    if (status !== undefined && status !== '') updateData.status = parseInt(status)
+    if (audit_time !== undefined && audit_time !== '') updateData.audit_time = new Date(audit_time)
+
+    await prisma.audit.update({ where: { id: auditId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/audit/:id', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+    await prisma.audit.delete({ where: { id: auditId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/audit', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const auditIds = ids.map(id => BigInt(id))
+    await prisma.audit.deleteMany({ where: { id: { in: auditIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
 router.put('/audit/:id/approve', adminAuth, async (req, res) => {
   try {
-    const { id } = req.params
-
-    // 获取审核记录信息
-    const [auditResult] = await pool.query('SELECT user_id, type FROM audit WHERE id = ?', [id])
-    if (auditResult.length === 0) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        code: RESPONSE_CODES.ERROR,
-        message: '审核记录不存在'
-      })
+    const auditId = BigInt(req.params.id)
+    const audit = await prisma.audit.findUnique({ where: { id: auditId } })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.ERROR, message: '审核记录不存在' })
     }
 
-    const { user_id, type } = auditResult[0]
-
-    // 更新审核状态为通过
-    await pool.query('UPDATE audit SET status = 1, audit_time = NOW() WHERE id = ?', [id])
-
-    // 根据认证类型更新用户的verified字段
-    // type: 1-官方认证, 2-个人认证
-    const verifiedValue = type === 1 ? 1 : (type === 2 ? 2 : 0)
-    await pool.query('UPDATE users SET verified = ? WHERE id = ?', [verifiedValue, user_id])
-
-    res.json({
-      code: RESPONSE_CODES.SUCCESS,
-      message: '审核通过成功'
+    await prisma.audit.update({
+      where: { id: auditId },
+      data: { status: 1, audit_time: new Date() }
     })
+
+    if (audit.type === 1 || audit.type === 2) {
+      await prisma.user.update({ where: { id: audit.user_id }, data: { verified: true } })
+    } else if (audit.type === 3 && audit.target_id) {
+      await prisma.comment.update({ where: { id: audit.target_id }, data: { audit_status: 1, is_public: true } })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '审核通过成功' })
   } catch (error) {
     console.error('审核通过失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '审核通过失败',
-      error: error.message
-    })
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '审核通过失败', error: error.message })
   }
 })
 
-// 拒绝申请
 router.put('/audit/:id/reject', adminAuth, async (req, res) => {
   try {
-    const { id } = req.params
-
-    // 获取审核记录信息
-    const [auditResult] = await pool.query('SELECT user_id FROM audit WHERE id = ?', [id])
-    if (auditResult.length === 0) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
-        code: RESPONSE_CODES.ERROR,
-        message: '审核记录不存在'
-      })
+    const auditId = BigInt(req.params.id)
+    const audit = await prisma.audit.findUnique({ where: { id: auditId } })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.ERROR, message: '审核记录不存在' })
     }
 
-    const { user_id } = auditResult[0]
+    await prisma.audit.update({
+      where: { id: auditId },
+      data: { status: 2, audit_time: new Date() }
+    })
 
-    // 更新审核状态为拒绝
-    await pool.query('UPDATE audit SET status = 2, audit_time = NOW() WHERE id = ?', [id])
+    if (audit.type === 1 || audit.type === 2) {
+      await prisma.user.update({ where: { id: audit.user_id }, data: { verified: false } })
+    } else if (audit.type === 3 && audit.target_id) {
+      await prisma.comment.update({ where: { id: audit.target_id }, data: { audit_status: 2, is_public: false } })
+    }
 
-    // 拒绝认证申请时，将用户的verified字段设置为0（未认证）
-    await pool.query('UPDATE users SET verified = 0 WHERE id = ?', [user_id])
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '拒绝申请成功' })
+  } catch (error) {
+    console.error('拒绝申请失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '拒绝申请失败', error: error.message })
+  }
+})
+
+// ===================== 分类管理 =====================
+router.get('/categories', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { name, category_title, sortField = 'id', sortOrder = 'asc' } = req.query
+
+    const where = {}
+    if (name) where.name = { contains: name }
+    if (category_title) where.category_title = { contains: category_title }
+
+    const [total, categories] = await Promise.all([
+      prisma.category.count({ where }),
+      prisma.category.findMany({
+        where,
+        include: { _count: { select: { posts: true } } },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formatted = categories.map(c => ({
+      id: c.id,
+      name: c.name,
+      category_title: c.category_title,
+      created_at: c.created_at,
+      post_count: c._count.posts
+    }))
 
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: '拒绝申请成功'
+      data: formatted,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      message: '获取成功'
     })
   } catch (error) {
-    console.error('拒绝申请失败:', error)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.ERROR,
-      message: '拒绝申请失败',
-      error: error.message
-    })
+    console.error('获取分类列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取分类列表失败' })
   }
 })
 
-// Categories CRUD 配置
-const categoriesCrudConfig = {
-  table: 'categories',
-  name: '分类',
-  requiredFields: ['name', 'category_title'],
-  updateFields: ['name', 'category_title'],
-  uniqueFields: ['name', 'category_title'],
-  cascadeRules: [
-    { table: 'posts', field: 'category_id' }
-  ],
-  searchFields: {
-    name: { operator: 'LIKE' },
-    category_title: { operator: 'LIKE' }
-  },
-  allowedSortFields: ['id', 'name', 'created_at'],
-  defaultOrderBy: 'id ASC',
+router.get('/categories/:id', adminAuth, async (req, res) => {
+  try {
+    const categoryId = parseInt(req.params.id)
+    const category = await prisma.category.findUnique({
+      where: { id: categoryId },
+      include: { _count: { select: { posts: true } } }
+    })
 
-  // 创建前的自定义验证
-  beforeCreate: async (data) => {
-    const { name, category_title } = data
-
-    if (!name || name.trim() === '') {
-      return { isValid: false, message: '分类名称不能为空' }
+    if (!category) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '分类不存在' })
     }
 
-    if (!category_title || category_title.trim() === '') {
-      return { isValid: false, message: '分类英文标题不能为空' }
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: category, message: 'success' })
+  } catch (error) {
+    console.error('获取分类详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+router.post('/categories', adminAuth, async (req, res) => {
+  try {
+    const { name, category_title } = req.body
+
+    if (!name || !name.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '分类名称不能为空' })
     }
 
-    // 检查分类名称是否已存在
-    const [existingName] = await pool.execute(
-      'SELECT id FROM categories WHERE name = ?',
-      [name.trim()]
-    )
-
-    if (existingName.length > 0) {
-      return { isValid: false, message: '分类名称已存在' }
+    if (!category_title || !category_title.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '分类英文标题不能为空' })
     }
 
-    // 检查分类英文标题是否已存在
-    const [existingTitle] = await pool.execute(
-      'SELECT id FROM categories WHERE category_title = ?',
-      [category_title.trim()]
-    )
-
-    if (existingTitle.length > 0) {
-      return { isValid: false, message: '分类英文标题已存在' }
+    const existingName = await prisma.category.findUnique({ where: { name: name.trim() } })
+    if (existingName) {
+      return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: '分类名称已存在' })
     }
 
-    // 清理数据
-    data.name = name.trim()
-    data.category_title = category_title.trim()
-
-    return { isValid: true }
-  },
-
-  // 更新前的自定义验证
-  beforeUpdate: async (data, id, req) => {
-    const { name, category_title } = data
-
-    if (name && name.trim() === '') {
-      return { isValid: false, message: '分类名称不能为空' }
+    const existingTitle = await prisma.category.findUnique({ where: { category_title: category_title.trim() } })
+    if (existingTitle) {
+      return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: '分类英文标题已存在' })
     }
 
-    if (category_title && category_title.trim() === '') {
-      return { isValid: false, message: '分类英文标题不能为空' }
+    const newCategory = await prisma.category.create({
+      data: { name: name.trim(), category_title: category_title.trim() }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: newCategory.id }, message: '创建成功' })
+  } catch (error) {
+    console.error('创建分类失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/categories/:id', adminAuth, async (req, res) => {
+  try {
+    const categoryId = parseInt(req.params.id)
+    const { name, category_title } = req.body
+
+    const category = await prisma.category.findUnique({ where: { id: categoryId } })
+    if (!category) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '分类不存在' })
     }
 
-    if (name) {
-      // 检查分类名称是否已存在（排除当前记录）
-      const [existingName] = await pool.execute(
-        'SELECT id FROM categories WHERE name = ? AND id != ?',
-        [name.trim(), id]
-      )
+    const updateData = {}
 
-      if (existingName.length > 0) {
-        return { isValid: false, message: '分类名称已存在' }
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '分类名称不能为空' })
       }
-
-      data.name = name.trim()
-    }
-
-    if (category_title) {
-      // 检查分类英文标题是否已存在（排除当前记录）
-      const [existingTitle] = await pool.execute(
-        'SELECT id FROM categories WHERE category_title = ? AND id != ?',
-        [category_title.trim(), id]
-      )
-
-      if (existingTitle.length > 0) {
-        return { isValid: false, message: '分类英文标题已存在' }
+      const existingName = await prisma.category.findFirst({ where: { name: name.trim(), NOT: { id: categoryId } } })
+      if (existingName) {
+        return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: '分类名称已存在' })
       }
-
-      data.category_title = category_title.trim()
+      updateData.name = name.trim()
     }
 
-    return { isValid: true }
-  },
-
-  // 删除前检查
-  beforeDelete: async (id) => {
-    // 检查是否有笔记使用此分类
-    const [posts] = await pool.execute(
-      'SELECT COUNT(*) as count FROM posts WHERE category_id = ?',
-      [id]
-    )
-
-    if (posts[0].count > 0) {
-      return { isValid: false, message: `该分类下还有 ${posts[0].count} 篇笔记，无法删除` }
+    if (category_title !== undefined) {
+      if (!category_title.trim()) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '分类英文标题不能为空' })
+      }
+      const existingTitle = await prisma.category.findFirst({ where: { category_title: category_title.trim(), NOT: { id: categoryId } } })
+      if (existingTitle) {
+        return res.status(HTTP_STATUS.CONFLICT).json({ code: RESPONSE_CODES.CONFLICT, message: '分类英文标题已存在' })
+      }
+      updateData.category_title = category_title.trim()
     }
 
-    return { isValid: true }
-  },
+    await prisma.category.update({ where: { id: categoryId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新分类失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
 
-  // 批量删除前检查
-  beforeDeleteMany: async (ids) => {
-    const placeholders = ids.map(() => '?').join(',')
-    const [posts] = await pool.execute(
-      `SELECT category_id, COUNT(*) as count FROM posts WHERE category_id IN (${placeholders}) GROUP BY category_id`,
-      ids
-    )
+router.delete('/categories/:id', adminAuth, async (req, res) => {
+  try {
+    const categoryId = parseInt(req.params.id)
+
+    const postCount = await prisma.post.count({ where: { category_id: categoryId } })
+    if (postCount > 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.ERROR, message: '该分类下还有 ' + postCount + ' 篇笔记，无法删除' })
+    }
+
+    await prisma.category.delete({ where: { id: categoryId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除分类失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.delete('/categories', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const posts = await prisma.post.groupBy({
+      by: ['category_id'],
+      where: { category_id: { in: ids } },
+      _count: true
+    })
 
     if (posts.length > 0) {
       const categoryIds = posts.map(p => p.category_id).join(', ')
-      return { isValid: false, message: `分类 ${categoryIds} 下还有笔记，无法删除` }
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.ERROR, message: '分类 ' + categoryIds + ' 下还有笔记，无法删除' })
     }
 
-    return { isValid: true }
-  },
+    await prisma.category.deleteMany({ where: { id: { in: ids } } })
 
-  customQueries: {
-    create: async (req) => {
-      const { name, category_title } = req.body;
-
-      if (!name || name.trim() === '') {
-        throw new Error('分类名称不能为空');
-      }
-
-      if (!category_title || category_title.trim() === '') {
-        throw new Error('分类英文标题不能为空');
-      }
-
-      // 检查分类名称是否已存在
-      const [existingName] = await pool.execute(
-        'SELECT id FROM categories WHERE name = ?',
-        [name.trim()]
-      );
-
-      if (existingName.length > 0) {
-        throw new Error('分类名称已存在');
-      }
-
-      // 检查分类英文标题是否已存在
-      const [existingTitle] = await pool.execute(
-        'SELECT id FROM categories WHERE category_title = ?',
-        [category_title.trim()]
-      );
-
-      if (existingTitle.length > 0) {
-        throw new Error('分类英文标题已存在');
-      }
-
-      // 创建分类
-      const [result] = await pool.execute(
-        'INSERT INTO categories (name, category_title) VALUES (?, ?)',
-        [name.trim(), category_title.trim()]
-      );
-
-      return {
-        id: result.insertId,
-        name: name.trim(),
-        category_title: category_title.trim()
-      };
-    },
-
-    getList: async (req) => {
-      const { page = 1, limit = 10, sortField = 'id', sortOrder = 'asc', name, category_title } = req.query
-      const offset = (parseInt(page) - 1) * parseInt(limit)
-
-      // 构建WHERE条件
-      const conditions = []
-      const queryParams = []
-
-      if (name && typeof name === 'string' && name.trim()) {
-        conditions.push('c.name LIKE ?')
-        queryParams.push(`%${name.trim()}%`)
-      }
-
-      if (category_title && typeof category_title === 'string' && category_title.trim()) {
-        conditions.push('c.category_title LIKE ?')
-        queryParams.push(`%${category_title.trim()}%`)
-      }
-
-      const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
-
-      // 使用对象映射验证排序字段
-      const allowedSortFields = {
-        'id': 'c.id',
-        'name': 'c.name',
-        'category_title': 'c.category_title',
-        'created_at': 'c.created_at',
-        'post_count': 'post_count'
-      }
-      
-      const allowedSortOrders = {
-        'asc': 'ASC',
-        'desc': 'DESC'
-      }
-      
-      const validSortField = allowedSortFields[sortField] || allowedSortFields['id']
-      const validSortOrder = allowedSortOrders[sortOrder?.toLowerCase()] || allowedSortOrders['asc']
-
-      // 获取总数
-      const [countResult] = await pool.execute(`
-        SELECT COUNT(DISTINCT c.id) as total
-        FROM categories c
-        ${whereClause}
-      `, queryParams)
-
-      // 获取数据 - 直接拼接LIMIT和OFFSET
-      const limitNum = parseInt(limit)
-      const offsetNum = parseInt(offset)
-
-      const [categories] = await pool.execute(`
-        SELECT 
-          c.id,
-          c.name,
-          c.category_title,
-          c.created_at,
-          COUNT(p.id) as post_count
-        FROM categories c
-        LEFT JOIN posts p ON c.id = p.category_id
-        ${whereClause}
-        GROUP BY c.id, c.name, c.category_title, c.created_at
-        ORDER BY ${validSortField} ${validSortOrder}
-        LIMIT ${limitNum} OFFSET ${offsetNum}
-      `, queryParams); // 只传递WHERE条件的参数
-
-      return {
-        data: categories,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: countResult[0].total,
-          totalPages: Math.ceil(countResult[0].total / parseInt(limit))
-        }
-      }
-    }
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除分类失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
   }
-}
+})
 
-const categoriesHandlers = createCrudHandlers(categoriesCrudConfig)
-
-// Categories 路由
-router.post('/categories', adminAuth, categoriesHandlers.create)
-router.put('/categories/:id', adminAuth, categoriesHandlers.update)
-router.delete('/categories/:id', adminAuth, categoriesHandlers.deleteOne)
-router.delete('/categories', adminAuth, categoriesHandlers.deleteMany)
-router.get('/categories/:id', adminAuth, categoriesHandlers.getOne)
-router.get('/categories', adminAuth, async (req, res) => {
+// ===================== 内容审核管理 (type 3,4) =====================
+router.get('/content-review', adminAuth, async (req, res) => {
   try {
-    const result = await categoriesCrudConfig.customQueries.getList(req)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { user_id, user_display_id, type, status, sortBy = 'created_at', sortOrder = 'DESC' } = req.query
+
+    const where = { type: { in: [3, 4] } }
+    if (user_id) where.user_id = BigInt(user_id)
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+    if (type) where.type = parseInt(type)
+    if (status !== undefined && status !== '') where.status = parseInt(status)
+
+    const [total, audits] = await Promise.all([
+      prisma.audit.count({ where }),
+      prisma.audit.findMany({
+        where,
+        include: { user: { select: { id: true, user_id: true, nickname: true, avatar: true } } },
+        orderBy: { [sortBy]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedAudits = audits.map(a => ({
+      id: Number(a.id),
+      user_id: Number(a.user_id),
+      type: a.type,
+      target_id: a.target_id ? Number(a.target_id) : null,
+      content: a.content,
+      risk_level: a.risk_level,
+      categories: a.categories,
+      reason: a.reason,
+      status: a.status,
+      created_at: a.created_at,
+      audit_time: a.audit_time,
+      user_display_id: a.user?.user_id,
+      nickname: a.user?.nickname,
+      avatar: a.user?.avatar
+    }))
+
     res.json({
       code: RESPONSE_CODES.SUCCESS,
-      message: '获取成功',
-      ...result
+      message: '获取审核列表成功',
+      data: { data: formattedAudits, total, page, limit }
     })
-  } catch (err) {
-    console.error('获取分类列表失败:', err)
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      code: RESPONSE_CODES.SERVER_ERROR,
-      message: err.message || '获取分类列表失败'
+  } catch (error) {
+    console.error('获取审核列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取审核列表失败', error: error.message })
+  }
+})
+
+router.get('/content-review/:id', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+    const audit = await prisma.audit.findFirst({
+      where: { id: auditId, type: { in: [3, 4] } },
+      include: { user: { select: { id: true, user_id: true, nickname: true, avatar: true } } }
     })
+
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '审核记录不存在' })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '获取审核记录成功', data: audit })
+  } catch (error) {
+    console.error('获取审核记录失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取审核记录失败', error: error.message })
+  }
+})
+
+router.post('/content-review', adminAuth, async (req, res) => {
+  try {
+    const { user_id, type, content, target_id } = req.body
+
+    if (!user_id || !type || !content) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少必填字段' })
+    }
+
+    const audit = await prisma.audit.create({
+      data: {
+        user_id: BigInt(user_id),
+        type: parseInt(type),
+        content,
+        target_id: target_id ? BigInt(target_id) : null,
+        status: 0
+      }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(audit.id) }, message: '创建成功' })
+  } catch (error) {
+    console.error('创建内容审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+router.put('/content-review/:id', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+    const { type, content, status, audit_time } = req.body
+
+    const audit = await prisma.audit.findFirst({ where: { id: auditId, type: { in: [3, 4] } } })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '审核记录不存在' })
+    }
+
+    const updateData = {}
+    if (type !== undefined && type !== '') updateData.type = parseInt(type)
+    if (content !== undefined) updateData.content = content
+    if (status !== undefined && status !== '') updateData.status = parseInt(status)
+    if (audit_time !== undefined && audit_time !== '') updateData.audit_time = new Date(audit_time)
+
+    await prisma.audit.update({ where: { id: auditId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新内容审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+router.delete('/content-review/:id', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+
+    const audit = await prisma.audit.findFirst({ where: { id: auditId, type: { in: [3, 4] } } })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.ERROR, message: '审核记录不存在' })
+    }
+
+    // If comment review and has target_id, delete the comment first
+    if (audit.type === 3 && audit.target_id) {
+      await prisma.like.deleteMany({ where: { target_type: 2, target_id: audit.target_id } })
+      await prisma.comment.deleteMany({ where: { id: audit.target_id } })
+    }
+
+    await prisma.audit.delete({ where: { id: auditId } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除审核记录失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败', error: error.message })
+  }
+})
+
+router.delete('/content-review', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const auditIds = ids.map(id => BigInt(id))
+    await prisma.audit.deleteMany({ where: { id: { in: auditIds }, type: { in: [3, 4] } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除内容审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+router.put('/content-review/:id/approve', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+    const audit = await prisma.audit.findFirst({ where: { id: auditId, type: { in: [3, 4] } } })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.ERROR, message: '审核记录不存在' })
+    }
+
+    await prisma.audit.update({
+      where: { id: auditId },
+      data: { status: 1, audit_time: new Date() }
+    })
+
+    if (audit.type === 3 && audit.target_id) {
+      await prisma.comment.update({ where: { id: audit.target_id }, data: { audit_status: 1, is_public: true } })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '审核通过成功' })
+  } catch (error) {
+    console.error('审核通过失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '审核通过失败', error: error.message })
+  }
+})
+
+router.put('/content-review/:id/reject', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+    const audit = await prisma.audit.findFirst({ where: { id: auditId, type: { in: [3, 4] } } })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.ERROR, message: '审核记录不存在' })
+    }
+
+    await prisma.audit.update({
+      where: { id: auditId },
+      data: { status: 2, audit_time: new Date() }
+    })
+
+    if (audit.type === 3 && audit.target_id) {
+      await prisma.comment.update({ where: { id: audit.target_id }, data: { audit_status: 2, is_public: false } })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '拒绝成功' })
+  } catch (error) {
+    console.error('拒绝失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '拒绝失败', error: error.message })
+  }
+})
+
+router.get('/content-review/settings', adminAuth, async (req, res) => {
+  res.json({
+    code: RESPONSE_CODES.SUCCESS,
+    message: '获取设置成功',
+    data: { ai_auto_review: aiAutoReviewEnabled }
+  })
+})
+
+router.put('/content-review/settings', adminAuth, async (req, res) => {
+  try {
+    const { ai_auto_review } = req.body
+    aiAutoReviewEnabled = !!ai_auto_review
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: aiAutoReviewEnabled ? 'AI自动审核已开启' : 'AI自动审核已关闭',
+      data: { ai_auto_review: aiAutoReviewEnabled }
+    })
+  } catch (error) {
+    console.error('更新设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新设置失败', error: error.message })
+  }
+})
+
+router.put('/content-review/:id/retry', adminAuth, async (req, res) => {
+  try {
+    const auditId = BigInt(req.params.id)
+
+    const audit = await prisma.audit.findFirst({
+      where: { id: auditId, type: { in: [3, 4] } }
+    })
+    if (!audit) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.ERROR, message: '审核记录不存在' })
+    }
+
+    const retryCount = audit.retry_count || 0
+    if (retryCount >= 5) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.ERROR, message: '已达到最大重试次数（5次）' })
+    }
+
+    if (audit.status !== 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.ERROR, message: '只有待审核状态的记录可以重试' })
+    }
+
+    const aiResult = await auditComment(audit.content, Number(audit.user_id))
+
+    let detailedReason = ''
+    let newStatus = 0
+    if (aiResult) {
+      const parts = []
+      if (aiResult.reason) parts.push('AI审核结果: ' + aiResult.reason)
+      if (aiResult.suggestion) parts.push('建议: ' + aiResult.suggestion)
+      if (aiResult.passed !== undefined) parts.push('是否通过: ' + (aiResult.passed ? '是' : '否'))
+      if (aiResult.score !== undefined) parts.push('风险分数: ' + aiResult.score)
+      if (aiResult.matched_keywords && aiResult.matched_keywords.length > 0) {
+        parts.push('匹配关键词: ' + aiResult.matched_keywords.join(', '))
+      }
+      if (aiResult.problem_sentences && aiResult.problem_sentences.length > 0) {
+        parts.push('问题句子: ' + aiResult.problem_sentences.join('; '))
+      }
+      detailedReason = parts.join(' | ')
+
+      if (aiResult.passed === true) {
+        newStatus = 1
+        detailedReason = '[AI重试审核通过 第' + (retryCount + 1) + '次] ' + detailedReason
+        if (audit.type === 3 && audit.target_id) {
+          await prisma.comment.update({ where: { id: audit.target_id }, data: { audit_status: 1, is_public: true } })
+        }
+      } else if (aiResult.passed === false) {
+        newStatus = 2
+        detailedReason = '[AI重试审核拒绝 第' + (retryCount + 1) + '次] ' + detailedReason
+        if (audit.type === 3 && audit.target_id) {
+          await prisma.comment.delete({ where: { id: audit.target_id } })
+          await prisma.audit.update({ where: { id: auditId }, data: { target_id: null } })
+        }
+      } else {
+        detailedReason = '[AI重试审核 第' + (retryCount + 1) + '次] ' + detailedReason
+      }
+    } else {
+      detailedReason = '[AI重试审核失败 第' + (retryCount + 1) + '次] AI服务无响应'
+    }
+
+    await prisma.audit.update({
+      where: { id: auditId },
+      data: {
+        audit_result: aiResult || undefined,
+        risk_level: aiResult?.risk_level || 'unknown',
+        categories: aiResult?.categories || [],
+        reason: detailedReason,
+        status: newStatus,
+        retry_count: retryCount + 1,
+        audit_time: newStatus !== 0 ? new Date() : audit.audit_time
+      }
+    })
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: newStatus === 1 ? 'AI重试审核通过' : (newStatus === 2 ? 'AI重试审核拒绝' : 'AI重试完成，仍待审核'),
+      data: { status: newStatus, retry_count: retryCount + 1, ai_result: aiResult }
+    })
+  } catch (error) {
+    console.error('重试AI审核失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '重试AI审核失败', error: error.message })
+  }
+})
+
+// ===================== 统计信息 =====================
+router.get('/stats/overview', adminAuth, async (req, res) => {
+  try {
+    const [usersCount, postsCount, commentsCount, likesCount] = await Promise.all([
+      prisma.user.count(),
+      prisma.post.count(),
+      prisma.comment.count(),
+      prisma.like.count()
+    ])
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { users: usersCount, posts: postsCount, comments: commentsCount, likes: likesCount },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取统计信息失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
   }
 })
 
 module.exports = router
+module.exports.isAiAutoReviewEnabled = isAiAutoReviewEnabled
