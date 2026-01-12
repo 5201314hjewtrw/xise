@@ -250,6 +250,64 @@ router.post('/:id/follow', authenticateToken, async (req, res) => {
   }
 });
 
+// 获取关注状态
+router.get('/:id/follow-status', authenticateToken, async (req, res) => {
+  try {
+    const targetIdParam = req.params.id;
+    const currentUserId = BigInt(req.user.id);
+
+    // Handle both numeric IDs and string usernames
+    let targetId;
+    if (/^\d+$/.test(targetIdParam)) {
+      targetId = BigInt(targetIdParam);
+    } else {
+      const user = await prisma.user.findUnique({ where: { user_id: targetIdParam }, select: { id: true } });
+      if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' });
+      targetId = user.id;
+    }
+
+    // Handle self-follow case
+    if (targetId === currentUserId) {
+      return res.json({
+        code: RESPONSE_CODES.SUCCESS,
+        message: 'success',
+        data: { followed: false, isMutual: false, buttonType: 'self' }
+      });
+    }
+
+    // Check if current user follows target user
+    const followRecord = await prisma.follow.findUnique({
+      where: { uk_follow: { follower_id: currentUserId, following_id: targetId } }
+    });
+    const followed = !!followRecord;
+
+    // Check if target user follows current user (for mutual follow)
+    const reverseFollowRecord = await prisma.follow.findUnique({
+      where: { uk_follow: { follower_id: targetId, following_id: currentUserId } }
+    });
+    const isMutual = followed && !!reverseFollowRecord;
+
+    // Determine button type (consistent with search endpoint)
+    let buttonType = 'follow'; // default: not following
+    if (followed && isMutual) {
+      buttonType = 'mutual'; // mutual follow
+    } else if (followed) {
+      buttonType = 'unfollow'; // following but not mutual
+    } else if (reverseFollowRecord) {
+      buttonType = 'back'; // they follow me, I don't follow them
+    }
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: 'success',
+      data: { followed, isMutual, buttonType }
+    });
+  } catch (error) {
+    console.error('获取关注状态失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR });
+  }
+});
+
 // 获取用户关注列表
 router.get('/:id/following', optionalAuth, async (req, res) => {
   try {
