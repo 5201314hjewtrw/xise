@@ -251,7 +251,8 @@ const form = reactive({
     paymentType: 'single',
     price: 0,
     freePreviewCount: 0,
-    previewDuration: 0
+    previewDuration: 0,
+    hideAll: false
   }
 })
 
@@ -806,7 +807,8 @@ const resetForm = () => {
     paymentType: 'single',
     price: 0,
     freePreviewCount: 0,
-    previewDuration: 0
+    previewDuration: 0,
+    hideAll: false
   }
   
   if (multiImageUploadRef.value) {
@@ -860,7 +862,8 @@ const loadDraftData = async (draftId) => {
           paymentType: 'single',
           price: 0,
           freePreviewCount: 0,
-          previewDuration: 0
+          previewDuration: 0,
+          hideAll: false
         }
       }
 

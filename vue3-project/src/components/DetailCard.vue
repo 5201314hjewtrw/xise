@@ -304,7 +304,7 @@
               <h2 class="post-title">{{ postData.title }}</h2>
               <p class="post-text">
                 <ContentRenderer :text="displayContent" />
-                <span v-if="showPaymentOverlay && postData.content.length > 50" class="content-locked-hint">
+                <span v-if="showPaymentOverlay && (postData.content.length > 50 || isContentHidden)" class="content-locked-hint">
                   （内容已隐藏，解锁后查看完整内容）
                 </span>
               </p>
@@ -713,6 +713,16 @@ const isPaidContent = computed(() => {
   return paymentSettings.value && paymentSettings.value.enabled && paymentSettings.value.price > 0
 })
 
+// 是否开启全部隐藏
+const isHideAll = computed(() => {
+  return paymentSettings.value && paymentSettings.value.hideAll === true
+})
+
+// 是否内容被完全隐藏（用于显示提示）
+const isContentHidden = computed(() => {
+  return props.item.contentHidden === true || (isHideAll.value && !hasPurchased.value)
+})
+
 // 是否已购买（TODO: 从后端获取用户购买状态）
 const hasPurchased = computed(() => {
   // 如果是作者自己，视为已购买
@@ -761,6 +771,12 @@ const showPaymentOverlay = computed(() => {
   const isPaid = isPaidContent.value && !hasPurchased.value
   if (!isPaid) return false
   
+  // 如果开启全部隐藏，始终显示遮挡
+  if (isHideAll.value) {
+    console.log('🔧 [DetailCard] 全部隐藏模式，显示遮挡')
+    return true
+  }
+  
   // 视频笔记：如果有预览视频URL或预览时长设置，不显示遮挡（让用户先看预览视频）
   if (props.item.type === 2) {
     const hasPreviewVideo = !!props.item.preview_video_url
@@ -799,10 +815,17 @@ const hasHiddenPaidImages = computed(() => {
   console.log('🔧 [DetailCard] hasHiddenPaidImages 计算:')
   console.log('🔧 [DetailCard] isPaidContent:', isPaidContent.value)
   console.log('🔧 [DetailCard] hasPurchased:', hasPurchased.value)
+  console.log('🔧 [DetailCard] isHideAll:', isHideAll.value)
   
   if (!isPaidContent.value || hasPurchased.value) {
     console.log('🔧 [DetailCard] hasHiddenPaidImages = false (不是付费内容或已购买)')
     return false
+  }
+  
+  // 如果开启全部隐藏，则认为有隐藏图片
+  if (isHideAll.value) {
+    console.log('🔧 [DetailCard] hasHiddenPaidImages = true (全部隐藏模式)')
+    return true
   }
   
   // 优先使用后端返回的 hiddenPaidImagesCount
