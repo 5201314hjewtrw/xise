@@ -1268,7 +1268,7 @@ router.put('/notifications/:id', adminAuth, async (req, res) => {
     if (user_id !== undefined && user_id !== '') updateData.user_id = BigInt(user_id)
     if (sender_id !== undefined && sender_id !== '') updateData.sender_id = BigInt(sender_id)
     if (type !== undefined && type !== '') updateData.type = parseInt(type)
-    if (title !== undefined && title !== '') updateData.title = title
+    if (title !== undefined) updateData.title = title
     if (target_id !== undefined) updateData.target_id = target_id ? BigInt(target_id) : null
     if (comment_id !== undefined) updateData.comment_id = comment_id ? BigInt(comment_id) : null
     if (is_read !== undefined && is_read !== '') updateData.is_read = Boolean(is_read)
@@ -1968,7 +1968,7 @@ router.put('/audit/:id', adminAuth, async (req, res) => {
 
     const updateData = {}
     if (type !== undefined && type !== '') updateData.type = parseInt(type)
-    if (content !== undefined && content !== '') updateData.content = content
+    if (content !== undefined) updateData.content = content
     if (status !== undefined && status !== '') updateData.status = parseInt(status)
     if (audit_time !== undefined && audit_time !== '') updateData.audit_time = new Date(audit_time)
 
@@ -2351,7 +2351,7 @@ router.put('/content-review/:id', adminAuth, async (req, res) => {
 
     const updateData = {}
     if (type !== undefined && type !== '') updateData.type = parseInt(type)
-    if (content !== undefined && content !== '') updateData.content = content
+    if (content !== undefined) updateData.content = content
     if (status !== undefined && status !== '') updateData.status = parseInt(status)
     if (audit_time !== undefined && audit_time !== '') updateData.audit_time = new Date(audit_time)
 
