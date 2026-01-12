@@ -15,6 +15,9 @@ import BackToTopButton from '@/components/BackToTopButton.vue'
 import ImageViewer from '@/components/ImageViewer.vue'
 import VerifiedBadge from '@/components/VerifiedBadge.vue'
 
+// Tab宽度常量（用于滑块位置计算）
+const TAB_WIDTH = 64
+
 const router = useRouter()
 const navigationStore = useNavigationStore()
 const userStore = useUserStore()
@@ -188,20 +191,19 @@ const sliderStyle = computed(() => {
   const index = tabs.value.findIndex(tab => tab.name === activeTab.value)
   const isLargeScreen = windowWidth.value > 900
   const tabCount = tabs.value.length
-  const tabWidth = 64
-  const centerOffset = (tabCount * tabWidth) / 2
+  const centerOffset = (tabCount * TAB_WIDTH) / 2
 
   if (isLargeScreen) {
     // 大屏：tab容器居中，max-width: 700px，无padding-left
     // 指示器需要相对于居中的tab容器定位
     return {
-      left: `calc(50% - ${centerOffset}px + ${index * tabWidth}px)`
+      left: `calc(50% - ${centerOffset}px + ${index * TAB_WIDTH}px)`
     }
   } else {
     // 小屏：tab容器有padding-left: 16px，justify-content: center
     // 由于左边有16px padding，需要稍微向左调整以补偿视觉偏移
     return {
-      left: `calc(50% - ${centerOffset - 8}px + ${index * tabWidth}px)`
+      left: `calc(50% - ${centerOffset - 8}px + ${index * TAB_WIDTH}px)`
     }
   }
 })
@@ -210,17 +212,16 @@ const fixedSliderStyle = computed(() => {
   const index = tabs.value.findIndex(tab => tab.name === activeTab.value)
   const isLargeScreen = windowWidth.value > 900
   const tabCount = tabs.value.length
-  const tabWidth = 64
-  const centerOffset = (tabCount * tabWidth) / 2
+  const centerOffset = (tabCount * TAB_WIDTH) / 2
 
   if (isLargeScreen) {
     return {
-      left: `calc(220px + (100vw - 220px - 192px) / 2 - ${centerOffset - tabWidth / 2}px + ${index * tabWidth}px)`
+      left: `calc(220px + (100vw - 220px - 192px) / 2 - ${centerOffset - TAB_WIDTH / 2}px + ${index * TAB_WIDTH}px)`
     }
   } else {
     // 小屏：与普通tab相同的布局
     return {
-      left: `calc(50% - ${centerOffset - 8}px + ${index * tabWidth}px)`
+      left: `calc(50% - ${centerOffset - 8}px + ${index * TAB_WIDTH}px)`
     }
   }
 })
@@ -229,7 +230,7 @@ const fixedSliderStyle = computed(() => {
 
 // 计算tab内容的transform值
 function getTabTransform(tabName) {
-  const tabOrder = ['posts', 'private', 'collections', 'likes']
+  const tabOrder = tabs.value.map(tab => tab.name)
   const activeIndex = tabOrder.indexOf(activeTab.value)
   const tabIndex = tabOrder.indexOf(tabName)
   
