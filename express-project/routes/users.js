@@ -205,8 +205,18 @@ router.put('/profile', authenticateToken, async (req, res) => {
 // 关注/取消关注用户
 router.post('/:id/follow', authenticateToken, async (req, res) => {
   try {
-    const targetId = BigInt(req.params.id);
+    const targetIdParam = req.params.id;
     const followerId = BigInt(req.user.id);
+
+    // Handle both numeric IDs and string usernames
+    let targetId;
+    if (/^\d+$/.test(targetIdParam)) {
+      targetId = BigInt(targetIdParam);
+    } else {
+      const user = await prisma.user.findUnique({ where: { user_id: targetIdParam }, select: { id: true } });
+      if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' });
+      targetId = user.id;
+    }
 
     if (targetId === followerId) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '不能关注自己' });
@@ -243,11 +253,21 @@ router.post('/:id/follow', authenticateToken, async (req, res) => {
 // 获取用户关注列表
 router.get('/:id/following', optionalAuth, async (req, res) => {
   try {
-    const userId = BigInt(req.params.id);
+    const userIdParam = req.params.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const currentUserId = req.user ? BigInt(req.user.id) : null;
+
+    // Handle both numeric IDs and string usernames
+    let userId;
+    if (/^\d+$/.test(userIdParam)) {
+      userId = BigInt(userIdParam);
+    } else {
+      const user = await prisma.user.findUnique({ where: { user_id: userIdParam }, select: { id: true } });
+      if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' });
+      userId = user.id;
+    }
 
     const follows = await prisma.follow.findMany({
       where: { follower_id: userId },
@@ -309,11 +329,21 @@ router.get('/:id/following', optionalAuth, async (req, res) => {
 // 获取用户粉丝列表
 router.get('/:id/followers', optionalAuth, async (req, res) => {
   try {
-    const userId = BigInt(req.params.id);
+    const userIdParam = req.params.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const currentUserId = req.user ? BigInt(req.user.id) : null;
+
+    // Handle both numeric IDs and string usernames
+    let userId;
+    if (/^\d+$/.test(userIdParam)) {
+      userId = BigInt(userIdParam);
+    } else {
+      const user = await prisma.user.findUnique({ where: { user_id: userIdParam }, select: { id: true } });
+      if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' });
+      userId = user.id;
+    }
 
     const follows = await prisma.follow.findMany({
       where: { following_id: userId },
@@ -473,11 +503,21 @@ router.get('/:id/posts', optionalAuth, async (req, res) => {
 // 获取用户收藏列表
 router.get('/:id/collections', optionalAuth, async (req, res) => {
   try {
-    const userId = BigInt(req.params.id);
+    const userIdParam = req.params.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const currentUserId = req.user ? BigInt(req.user.id) : null;
+
+    // Handle both numeric IDs and string usernames
+    let userId;
+    if (/^\d+$/.test(userIdParam)) {
+      userId = BigInt(userIdParam);
+    } else {
+      const user = await prisma.user.findUnique({ where: { user_id: userIdParam }, select: { id: true } });
+      if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' });
+      userId = user.id;
+    }
 
     const collections = await prisma.collection.findMany({
       where: { user_id: userId },
@@ -564,11 +604,21 @@ router.get('/:id/collections', optionalAuth, async (req, res) => {
 // 获取用户点赞列表
 router.get('/:id/likes', optionalAuth, async (req, res) => {
   try {
-    const userId = BigInt(req.params.id);
+    const userIdParam = req.params.id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const currentUserId = req.user ? BigInt(req.user.id) : null;
+
+    // Handle both numeric IDs and string usernames
+    let userId;
+    if (/^\d+$/.test(userIdParam)) {
+      userId = BigInt(userIdParam);
+    } else {
+      const user = await prisma.user.findUnique({ where: { user_id: userIdParam }, select: { id: true } });
+      if (!user) return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' });
+      userId = user.id;
+    }
 
     const likes = await prisma.like.findMany({
       where: { user_id: userId, target_type: 1 },
