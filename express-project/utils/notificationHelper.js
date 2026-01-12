@@ -261,6 +261,27 @@ class NotificationHelper {
   }
 
   /**
+   * 使用 Prisma 插入通知到数据库
+   * @param {Object} prisma Prisma客户端实例
+   * @param {Object} notificationData 通知数据
+   * @returns {Promise<Object>} 插入结果
+   */
+  static async insertNotificationPrisma(prisma, notificationData) {
+    const result = await prisma.notification.create({
+      data: {
+        user_id: BigInt(notificationData.user_id),
+        sender_id: BigInt(notificationData.sender_id),
+        type: notificationData.type,
+        title: notificationData.title,
+        target_id: notificationData.target_id ? BigInt(notificationData.target_id) : null,
+        comment_id: notificationData.comment_id ? BigInt(notificationData.comment_id) : null,
+        is_read: notificationData.is_read === 1
+      }
+    });
+    return result;
+  }
+
+  /**
    * 创建并插入通知（便捷方法）
    * @param {Object} pool 数据库连接池
    * @param {Object} params 通知参数
@@ -275,6 +296,23 @@ class NotificationHelper {
 
     const notificationData = this.createNotificationData(params);
     return await this.insertNotification(pool, notificationData);
+  }
+
+  /**
+   * 使用 Prisma 创建并插入通知（便捷方法）
+   * @param {Object} prisma Prisma客户端实例
+   * @param {Object} params 通知参数
+   * @returns {Promise<Object>} 插入结果
+   */
+  static async createAndInsertNotificationPrisma(prisma, params) {
+    // 检查是否给自己发通知
+    if (params.userId === params.senderId) {
+      console.log('⚠️ 不给自己发通知');
+      return null;
+    }
+
+    const notificationData = this.createNotificationData(params);
+    return await this.insertNotificationPrisma(prisma, notificationData);
   }
 
   /**
@@ -299,6 +337,33 @@ class NotificationHelper {
     }
     
     const [result] = await pool.execute(query, params);
+    return result;
+  }
+
+  /**
+   * 使用 Prisma 删除指定条件的通知
+   * @param {Object} prisma Prisma客户端实例
+   * @param {Object} conditions 删除条件
+   * @param {number} conditions.type 通知类型
+   * @param {number} conditions.targetId 目标ID
+   * @param {number} conditions.senderId 发送者ID
+   * @param {number} conditions.userId 接收者ID（可选）
+   * @returns {Promise<Object>} 删除结果
+   */
+  static async deleteNotificationsPrisma(prisma, conditions) {
+    const { type, targetId, senderId, userId } = conditions;
+    
+    const where = {
+      type: type,
+      target_id: BigInt(targetId),
+      sender_id: BigInt(senderId)
+    };
+    
+    if (userId) {
+      where.user_id = BigInt(userId);
+    }
+    
+    const result = await prisma.notification.deleteMany({ where });
     return result;
   }
 

@@ -1,21 +1,21 @@
 /**
  * 通用数据库操作工具
+ * 使用 Prisma ORM 进行数据库操作
  */
-const { pool } = require('../config/config')
+const prisma = require('./prisma')
 
 /**
  * 检查记录是否存在
- * @param {string} table - 表名
+ * @param {string} table - 表名 (对应 Prisma model 名称)
  * @param {string} field - 字段名
  * @param {*} value - 字段值
  * @returns {Promise<boolean>} 是否存在
  */
 async function recordExists(table, field, value) {
-  const [result] = await pool.execute(
-    `SELECT 1 FROM ${table} WHERE ${field} = ? LIMIT 1`,
-    [value]
-  )
-  return result.length > 0
+  const count = await prisma[table].count({
+    where: { [field]: value }
+  })
+  return count > 0
 }
 
 /**
@@ -30,11 +30,10 @@ async function recordsExist(table, field, values) {
     return { existingCount: 0, missingValues: [] }
   }
 
-  const placeholders = values.map(() => '?').join(',')
-  const [result] = await pool.execute(
-    `SELECT ${field} FROM ${table} WHERE ${field} IN (${placeholders})`,
-    values
-  )
+  const result = await prisma[table].findMany({
+    where: { [field]: { in: values } },
+    select: { [field]: true }
+  })
 
   const existingValues = result.map(row => row[field])
   const missingValues = values.filter(value => !existingValues.includes(value))
@@ -54,16 +53,14 @@ async function recordsExist(table, field, values) {
  * @returns {Promise<boolean>} 是否唯一
  */
 async function isUnique(table, field, value, excludeId = null) {
-  let query = `SELECT 1 FROM ${table} WHERE ${field} = ?`
-  const params = [value]
-
+  const where = { [field]: value }
+  
   if (excludeId) {
-    query += ' AND id != ?'
-    params.push(excludeId)
+    where.id = { not: BigInt(excludeId) }
   }
 
-  const [result] = await pool.execute(query, params)
-  return result.length === 0
+  const count = await prisma[table].count({ where })
+  return count === 0
 }
 
 /**
@@ -73,14 +70,8 @@ async function isUnique(table, field, value, excludeId = null) {
  * @returns {Promise<number>} 插入的ID
  */
 async function createRecord(table, data) {
-  const fields = Object.keys(data)
-  const values = Object.values(data)
-  const placeholders = fields.map(() => '?').join(',')
-
-  const query = `INSERT INTO ${table} (${fields.join(',')}) VALUES (${placeholders})`
-  const [result] = await pool.execute(query, values)
-
-  return result.insertId
+  const result = await prisma[table].create({ data })
+  return Number(result.id)
 }
 
 /**
@@ -91,14 +82,18 @@ async function createRecord(table, data) {
  * @returns {Promise<number>} 影响的行数
  */
 async function updateRecord(table, id, data) {
-  const fields = Object.keys(data)
-  const values = Object.values(data)
-  const setClause = fields.map(field => `${field} = ?`).join(', ')
-
-  const query = `UPDATE ${table} SET ${setClause} WHERE id = ?`
-  const [result] = await pool.execute(query, [...values, id])
-
-  return result.affectedRows
+  try {
+    await prisma[table].update({
+      where: { id: BigInt(id) },
+      data
+    })
+    return 1
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return 0 // Record not found
+    }
+    throw error
+  }
 }
 
 /**
@@ -108,8 +103,17 @@ async function updateRecord(table, id, data) {
  * @returns {Promise<number>} 影响的行数
  */
 async function deleteRecord(table, id) {
-  const [result] = await pool.execute(`DELETE FROM ${table} WHERE id = ?`, [id])
-  return result.affectedRows
+  try {
+    await prisma[table].delete({
+      where: { id: BigInt(id) }
+    })
+    return 1
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return 0 // Record not found
+    }
+    throw error
+  }
 }
 
 /**
@@ -123,29 +127,26 @@ async function deleteRecords(table, ids) {
     return 0
   }
 
-  const placeholders = ids.map(() => '?').join(',')
-  const [result] = await pool.execute(
-    `DELETE FROM ${table} WHERE id IN (${placeholders})`,
-    ids
-  )
+  const result = await prisma[table].deleteMany({
+    where: { id: { in: ids.map(id => BigInt(id)) } }
+  })
 
-  return result.affectedRows
+  return result.count
 }
 
 /**
  * 获取记录详情
  * @param {string} table - 表名
  * @param {number} id - 记录ID
- * @param {string} fields - 要查询的字段，默认为*
+ * @param {string} fields - 要查询的字段，默认为* (在 Prisma 中忽略)
  * @returns {Promise<Object|null>} 记录对象或null
  */
 async function getRecord(table, id, fields = '*') {
-  const [result] = await pool.execute(
-    `SELECT ${fields} FROM ${table} WHERE id = ? LIMIT 1`,
-    [id]
-  )
+  const result = await prisma[table].findUnique({
+    where: { id: BigInt(id) }
+  })
 
-  return result.length > 0 ? result[0] : null
+  return result
 }
 
 /**
@@ -154,38 +155,36 @@ async function getRecord(table, id, fields = '*') {
  * @param {Object} options - 查询选项
  * @param {number} options.page - 页码
  * @param {number} options.limit - 每页数量
- * @param {string} options.where - WHERE条件
- * @param {Array} options.params - 查询参数
- * @param {string} options.orderBy - 排序字段
- * @param {string} options.fields - 查询字段
+ * @param {Object} options.where - WHERE条件 (Prisma格式)
+ * @param {Object} options.orderBy - 排序字段 (Prisma格式)
+ * @param {Object} options.select - 查询字段 (Prisma格式)
  * @returns {Promise<Object>} {data: Array, total: number, page: number, limit: number}
  */
 async function getRecords(table, options = {}) {
   const {
     page = 1,
     limit = 20,
-    where = '',
-    params = [],
-    orderBy = 'created_at DESC',
-    fields = '*'
+    where = {},
+    orderBy = { created_at: 'desc' },
+    select = undefined
   } = options
 
-  const offset = (page - 1) * limit
-
-  // 构建查询条件
-  const whereClause = where ? `WHERE ${where}` : ''
+  const skip = (page - 1) * limit
 
   // 获取总数
-  const countQuery = `SELECT COUNT(*) as total FROM ${table} ${whereClause}`
-  const [countResult] = await pool.execute(countQuery, params)
-  const total = countResult[0].total
+  const total = await prisma[table].count({ where })
 
   // 获取数据
-  const dataQuery = `SELECT ${fields} FROM ${table} ${whereClause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`
-  const [dataResult] = await pool.execute(dataQuery, [...params, String(limit), String(offset)])
+  const data = await prisma[table].findMany({
+    where,
+    orderBy,
+    skip,
+    take: limit,
+    select
+  })
 
   return {
-    data: dataResult,
+    data,
     total,
     page,
     limit,
@@ -201,15 +200,13 @@ async function getRecords(table, options = {}) {
  */
 async function cascadeDelete(cascadeRules, targetIds) {
   const ids = Array.isArray(targetIds) ? targetIds : [targetIds]
+  const bigIntIds = ids.map(id => BigInt(id))
 
   for (const rule of cascadeRules) {
     const { table, field } = rule
-    const placeholders = ids.map(() => '?').join(',')
-
-    await pool.execute(
-      `DELETE FROM ${table} WHERE ${field} IN (${placeholders})`,
-      ids
-    )
+    await prisma[table].deleteMany({
+      where: { [field]: { in: bigIntIds } }
+    })
   }
 }
 
