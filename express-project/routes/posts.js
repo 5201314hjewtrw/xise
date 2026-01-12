@@ -331,7 +331,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
       author_auto_id: post.user ? Number(post.user.id) : null,
       location: post.user?.location,
       verified: post.user?.verified,
-      images: post.images.map(img => ({ id: Number(img.id), image_url: img.image_url, isFreePreview: img.is_free_preview })),
+      images: post.images.map(img => ({ id: Number(img.id), url: img.image_url, isFreePreview: img.is_free_preview })),
       videos: post.videos.map(v => ({ id: Number(v.id), video_url: v.video_url, cover_url: v.cover_url, dash_url: v.dash_url, preview_video_url: v.preview_video_url })),
       attachment: post.attachments[0] ? { url: post.attachments[0].attachment_url, filename: post.attachments[0].filename, filesize: Number(post.attachments[0].filesize) } : null,
       tags: post.tags.map(pt => ({ id: pt.tag.id, name: pt.tag.name }))
