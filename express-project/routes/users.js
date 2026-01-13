@@ -6,6 +6,8 @@ const { prisma } = require('../config/config');
 const { optionalAuth, authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const { protectPostListItem } = require('../utils/paidContentHelper');
+const { auditNickname, auditContent, isAuditEnabled } = require('../utils/contentAudit');
+const { addContentAuditTask, isQueueEnabled } = require('../utils/queueService');
 
 // 内容最大长度限制
 const MAX_CONTENT_LENGTH = 1000;
@@ -386,9 +388,55 @@ router.put('/:id', authenticateToken, async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '昵称不能为空' });
     }
 
-    const updateData = { nickname: nickname.trim() };
+    const trimmedNickname = nickname.trim();
+    const trimmedBio = bio !== undefined ? (bio || '') : undefined;
+
+    // 内容审核处理
+    let finalNickname = trimmedNickname;
+    let finalBio = trimmedBio;
+    let useAsyncAudit = false;
+
+    // 判断是否使用异步审核
+    if (isAuditEnabled() && isQueueEnabled()) {
+      // 异步审核：先保存，后台处理审核
+      useAsyncAudit = true;
+      console.log('📝 使用异步队列进行用户资料内容审核');
+    } else if (isAuditEnabled()) {
+      // 同步审核昵称
+      try {
+        const nicknameAuditResult = await auditNickname(trimmedNickname, Number(targetUserId));
+        if (nicknameAuditResult && nicknameAuditResult.passed === false) {
+          // 昵称审核不通过，生成随机昵称
+          const prefix = 'user';
+          const randomStr = Math.random().toString(36).substring(2, 8);
+          const randomNum = Math.floor(Math.random() * 1000);
+          finalNickname = `${prefix}_${randomStr}${randomNum}`;
+          console.log(`⚠️ 昵称审核不通过，已修改为随机昵称: ${finalNickname}`);
+        }
+      } catch (auditError) {
+        console.error('昵称审核异常:', auditError);
+        // 审核异常时不阻塞更新，继续流程
+      }
+
+      // 同步审核简介（如果提供了bio）
+      if (trimmedBio !== undefined && trimmedBio.length > 0) {
+        try {
+          const bioAuditResult = await auditContent(trimmedBio, `user-${Number(targetUserId)}`);
+          if (bioAuditResult && bioAuditResult.passed === false) {
+            // 简介审核不通过，设置为审核失败提示
+            finalBio = '内容审核失败';
+            console.log(`⚠️ 简介审核不通过，已修改为: ${finalBio}`);
+          }
+        } catch (auditError) {
+          console.error('简介审核异常:', auditError);
+          // 审核异常时不阻塞更新，继续流程
+        }
+      }
+    }
+
+    const updateData = { nickname: finalNickname };
     if (avatar !== undefined) updateData.avatar = avatar || '';
-    if (bio !== undefined) updateData.bio = bio || '';
+    if (finalBio !== undefined) updateData.bio = finalBio;
     if (location !== undefined) updateData.location = location || '';
     if (gender !== undefined) updateData.gender = gender || null;
     if (zodiac_sign !== undefined) updateData.zodiac_sign = zodiac_sign || null;
@@ -398,6 +446,19 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (interests !== undefined) updateData.interests = interests || null;
 
     await prisma.user.update({ where: { id: targetUserId }, data: updateData });
+
+    // 如果使用异步审核，将审核任务加入队列
+    if (useAsyncAudit) {
+      // 昵称审核任务
+      addContentAuditTask(trimmedNickname, Number(targetUserId), 'nickname', Number(targetUserId));
+      console.log(`📝 昵称审核任务已加入队列 - 用户ID: ${targetUserId}`);
+
+      // 简介审核任务（如果提供了bio）
+      if (trimmedBio !== undefined && trimmedBio.length > 0) {
+        addContentAuditTask(trimmedBio, Number(targetUserId), 'bio', Number(targetUserId));
+        console.log(`📝 简介审核任务已加入队列 - 用户ID: ${targetUserId}`);
+      }
+    }
 
     const updatedUser = await prisma.user.findUnique({
       where: { id: targetUserId },

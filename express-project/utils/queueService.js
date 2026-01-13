@@ -241,6 +241,35 @@ async function initWorkers(connection) {
             }
           });
         }
+
+        // 如果是简介审核，审核不通过则修改为"内容审核失败"
+        if (type === 'bio' && targetId) {
+          if (result.passed) {
+            console.log(`✅ 简介审核通过 - 用户ID: ${targetId}`);
+          } else {
+            // 审核不通过：将简介修改为"内容审核失败"
+            await prisma.user.update({
+              where: { id: BigInt(targetId) },
+              data: { bio: '内容审核失败' }
+            });
+            console.log(`⚠️ 简介审核不通过，已修改为"内容审核失败" - 用户ID: ${targetId}, 原因: ${result.reason || '简介不符合社区规范'}`);
+          }
+          
+          // 创建审核记录
+          await prisma.audit.create({
+            data: {
+              user_id: BigInt(targetId),
+              type: 5, // 简介审核
+              target_id: BigInt(targetId),
+              content: content.substring(0, 500),
+              risk_level: result.risk_level || 'unknown',
+              categories: result.categories || [],
+              reason: result.passed ? '简介审核通过' : `[AI自动审核] 简介不符合规范，已修改为"内容审核失败"。原因: ${result.reason || '简介不符合社区规范'}`,
+              status: result.passed ? 1 : 2,
+              audit_time: new Date()
+            }
+          });
+        }
         
         console.log(`✅ 内容审核完成 - 类型: ${type}, 结果: ${result.passed ? '通过' : '不通过'}`);
         return { success: true, result };
