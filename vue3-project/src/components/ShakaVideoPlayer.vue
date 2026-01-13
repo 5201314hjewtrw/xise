@@ -1166,6 +1166,12 @@ onBeforeUnmount(() => {
   if (reEnableAbrTimer) {
     clearTimeout(reEnableAbrTimer)
   }
+  
+  // 先暂停视频播放，确保导航离开时停止播放
+  if (videoElement.value) {
+    videoElement.value.pause()
+  }
+  
   if (player) {
     // 移除adaptation事件监听器
     player.removeEventListener('adaptation', onAdaptation)
