@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
+const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES, AUDIT_TYPES, AUDIT_STATUS, BANNED_WORD_TYPES } = require('../constants');
 const { prisma } = require('../config/config');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const { extractMentionedUsers, hasMentions } = require('../utils/mentionParser');
 const { sanitizeContent } = require('../utils/contentSecurity');
 const { auditComment, isAuditEnabled } = require('../utils/contentAudit');
-const { addContentAuditTask, isQueueEnabled } = require('../utils/queueService');
+const { addContentAuditTask, addAuditLogTask, isQueueEnabled } = require('../utils/queueService');
+const { checkCommentBannedWords, getBannedWordAuditResult } = require('../utils/bannedWordsChecker');
 
 // 获取AI自动审核状态（延迟加载以避免循环依赖）
 let getAiAutoReviewStatus = null;
@@ -224,11 +225,40 @@ router.post('/', authenticateToken, async (req, res) => {
       }
     }
 
+    // 先检查本地违禁词
+    const bannedWordCheck = await checkCommentBannedWords(prisma, sanitizedContent);
+    if (bannedWordCheck.matched) {
+      console.log(`⚠️ 评论触发本地违禁词: ${bannedWordCheck.matchedWords.join(', ')}`);
+      
+      // 记录到审核表（使用异步队列）
+      const bannedWordAuditResult = getBannedWordAuditResult(bannedWordCheck.matchedWords);
+      addAuditLogTask({
+        userId: Number(userId),
+        type: AUDIT_TYPES.COMMENT,
+        targetId: null,
+        content: sanitizedContent,
+        auditResult: bannedWordAuditResult,
+        riskLevel: 'high',
+        categories: ['banned_word'],
+        reason: `[本地违禁词拒绝] 触发违禁词: ${bannedWordCheck.matchedWords.join(', ')}`,
+        status: AUDIT_STATUS.REJECTED
+      });
+      
+      return res.status(HTTP_STATUS.OK).json({
+        code: RESPONSE_CODES.SUCCESS,
+        message: '评论已提交，但因内容违规被系统自动拒绝',
+        data: {
+          rejected: true,
+          reason: '内容包含违禁词，不符合社区规范'
+        }
+      });
+    }
+
     // 进行内容审核
-    let auditStatus = isAuditEnabled() ? 0 : 1;
+    let auditStatus = isAuditEnabled() ? AUDIT_STATUS.PENDING : AUDIT_STATUS.APPROVED;
     let isPublic = isAuditEnabled() ? false : true;
     let auditResult = null;
-    let auditRecordStatus = 0;
+    let auditRecordStatus = AUDIT_STATUS.PENDING;
     let shouldDeleteComment = false;
     let useAsyncAudit = false;
 
@@ -237,7 +267,7 @@ router.post('/', authenticateToken, async (req, res) => {
     if (isAuditEnabled() && isQueueEnabled()) {
       // 使用异步审核：评论先创建为待审核状态，后台处理审核
       useAsyncAudit = true;
-      auditStatus = 0;
+      auditStatus = AUDIT_STATUS.PENDING;
       isPublic = false;
       console.log('📝 使用异步队列进行内容审核');
     } else if (isAuditEnabled()) {
@@ -262,51 +292,44 @@ router.post('/', authenticateToken, async (req, res) => {
           
           if (auditResult.passed !== undefined) {
             if (auditResult.passed === true) {
-              auditStatus = 1;
+              auditStatus = AUDIT_STATUS.APPROVED;
               isPublic = true;
-              auditRecordStatus = 1;
+              auditRecordStatus = AUDIT_STATUS.APPROVED;
               detailedReason = `[AI自动审核通过] ${detailedReason}`;
             } else {
-              auditStatus = 2;
+              auditStatus = AUDIT_STATUS.REJECTED;
               isPublic = false;
-              auditRecordStatus = 2;
+              auditRecordStatus = AUDIT_STATUS.REJECTED;
               shouldDeleteComment = true;
               detailedReason = `[AI自动审核拒绝] ${detailedReason}`;
             }
           }
         }
         
-        // 记录到audit表
-        await prisma.audit.create({
-          data: {
-            user_id: userId,
-            type: 3,
-            target_id: null,
-            content: sanitizedContent,
-            audit_result: auditResult,
-            risk_level: auditResult?.risk_level || 'low',
-            categories: auditResult?.categories || [],
-            reason: detailedReason || 'AI审核完成，等待人工确认',
-            status: auditRecordStatus,
-            audit_time: auditRecordStatus !== 0 ? new Date() : null,
-            retry_count: 0
-          }
+        // 记录到audit表（使用异步队列）
+        addAuditLogTask({
+          userId: Number(userId),
+          type: AUDIT_TYPES.COMMENT,
+          targetId: null,
+          content: sanitizedContent,
+          auditResult: auditResult,
+          riskLevel: auditResult?.risk_level || 'low',
+          categories: auditResult?.categories || [],
+          reason: detailedReason || 'AI审核完成，等待人工确认',
+          status: auditRecordStatus
         });
       } catch (auditError) {
         console.error('评论审核异常:', auditError);
-        await prisma.audit.create({
-          data: {
-            user_id: userId,
-            type: 3,
-            target_id: null,
-            content: sanitizedContent,
-            audit_result: null,
-            risk_level: 'unknown',
-            categories: [],
-            reason: '审核服务异常，需人工审核',
-            status: 0,
-            retry_count: 0
-          }
+        addAuditLogTask({
+          userId: Number(userId),
+          type: AUDIT_TYPES.COMMENT,
+          targetId: null,
+          content: sanitizedContent,
+          auditResult: null,
+          riskLevel: 'unknown',
+          categories: [],
+          reason: '审核服务异常，需人工审核',
+          status: AUDIT_STATUS.PENDING
         });
       }
     }
