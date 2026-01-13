@@ -7,7 +7,7 @@ const { optionalAuth, authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const { protectPostListItem } = require('../utils/paidContentHelper');
 const { auditNickname, auditContent, isAuditEnabled } = require('../utils/contentAudit');
-const { addContentAuditTask, isQueueEnabled } = require('../utils/queueService');
+const { addContentAuditTask, isQueueEnabled, generateRandomNickname } = require('../utils/queueService');
 
 // 内容最大长度限制
 const MAX_CONTENT_LENGTH = 1000;
@@ -407,10 +407,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         const nicknameAuditResult = await auditNickname(trimmedNickname, Number(targetUserId));
         if (nicknameAuditResult && nicknameAuditResult.passed === false) {
           // 昵称审核不通过，生成随机昵称
-          const prefix = 'user';
-          const randomStr = Math.random().toString(36).substring(2, 8);
-          const randomNum = Math.floor(Math.random() * 1000);
-          finalNickname = `${prefix}_${randomStr}${randomNum}`;
+          finalNickname = generateRandomNickname();
           console.log(`⚠️ 昵称审核不通过，已修改为随机昵称: ${finalNickname}`);
         }
       } catch (auditError) {
