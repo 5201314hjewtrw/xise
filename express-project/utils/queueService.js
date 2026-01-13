@@ -18,6 +18,17 @@ let queueConfig = {
     port: parseInt(process.env.REDIS_PORT) || 6379,
     password: process.env.REDIS_PASSWORD || undefined,
     db: parseInt(process.env.REDIS_DB) || 0
+  },
+  // 并发配置
+  concurrency: {
+    ipLocation: parseInt(process.env.QUEUE_IP_LOCATION_CONCURRENCY) || 5,
+    contentAudit: parseInt(process.env.QUEUE_CONTENT_AUDIT_CONCURRENCY) || 3,
+    generalTask: parseInt(process.env.QUEUE_GENERAL_TASK_CONCURRENCY) || 5
+  },
+  // 重试配置
+  retry: {
+    attempts: parseInt(process.env.QUEUE_RETRY_ATTEMPTS) || 3,
+    backoffDelay: parseInt(process.env.QUEUE_RETRY_DELAY) || 1000
   }
 };
 
@@ -124,7 +135,7 @@ async function initWorkers(connection) {
         throw error;
       }
     },
-    { connection, concurrency: 5 }
+    { connection, concurrency: queueConfig.concurrency.ipLocation }
   );
 
   // 内容审核 Worker
@@ -143,15 +154,34 @@ async function initWorkers(connection) {
         // 如果是评论审核，更新评论状态
         if (type === 'comment' && targetId) {
           if (result.passed) {
+            // 审核通过：更新状态为公开
             await prisma.comment.update({
               where: { id: BigInt(targetId) },
               data: { audit_status: 1, is_public: true }
             });
+            console.log(`✅ 评论审核通过 - 评论ID: ${targetId}`);
           } else {
-            await prisma.comment.update({
+            // 审核不通过：删除评论（与同步审核行为一致）
+            // 先获取评论信息以更新帖子评论数
+            const comment = await prisma.comment.findUnique({
               where: { id: BigInt(targetId) },
-              data: { audit_status: 2, is_public: false }
+              select: { post_id: true }
             });
+            
+            if (comment) {
+              // 删除评论
+              await prisma.comment.delete({
+                where: { id: BigInt(targetId) }
+              });
+              
+              // 更新帖子评论数
+              await prisma.post.update({
+                where: { id: comment.post_id },
+                data: { comment_count: { decrement: 1 } }
+              });
+              
+              console.log(`🗑️ 违规评论已删除 - 评论ID: ${targetId}, 原因: ${result.reason || '内容不符合社区规范'}`);
+            }
           }
           
           // 创建审核记录
@@ -163,7 +193,7 @@ async function initWorkers(connection) {
               content: content.substring(0, 500),
               risk_level: result.risk_level || 'unknown',
               categories: result.categories || [],
-              reason: result.reason || '',
+              reason: result.passed ? '审核通过' : `[AI自动审核拒绝] ${result.reason || '内容不符合社区规范'}`,
               status: result.passed ? 1 : 2,
               audit_time: new Date()
             }
@@ -177,7 +207,7 @@ async function initWorkers(connection) {
         throw error;
       }
     },
-    { connection, concurrency: 3 }
+    { connection, concurrency: queueConfig.concurrency.contentAudit }
   );
 
   // 通用任务 Worker
@@ -208,7 +238,7 @@ async function initWorkers(connection) {
         throw error;
       }
     },
-    { connection, concurrency: 5 }
+    { connection, concurrency: queueConfig.concurrency.generalTask }
   );
 
   console.log('● 队列 Workers 初始化完成');
@@ -228,8 +258,8 @@ async function addIPLocationTask(userId, ip) {
   try {
     const queue = queues[QUEUE_NAMES.IP_LOCATION];
     const job = await queue.add('update-location', { userId, ip }, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 1000 },
+      attempts: queueConfig.retry.attempts,
+      backoff: { type: 'exponential', delay: queueConfig.retry.backoffDelay },
       removeOnComplete: 100,
       removeOnFail: 50
     });
@@ -256,8 +286,8 @@ async function addContentAuditTask(content, userId, type, targetId = null) {
   try {
     const queue = queues[QUEUE_NAMES.CONTENT_AUDIT];
     const job = await queue.add('audit-content', { content, userId, type, targetId }, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
+      attempts: queueConfig.retry.attempts,
+      backoff: { type: 'exponential', delay: queueConfig.retry.backoffDelay * 2 },
       removeOnComplete: 100,
       removeOnFail: 50
     });
