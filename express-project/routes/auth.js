@@ -8,6 +8,7 @@ const { authenticateToken } = require('../middleware/auth');
 const { getIPLocation, getRealIP } = require('../utils/ipLocation');
 const { sendEmailCode } = require('../utils/email');
 const { auditNickname, isAuditEnabled } = require('../utils/contentAudit');
+const registrationQueue = require('../utils/registrationQueue');
 const svgCaptcha = require('svg-captcha');
 const path = require('path');
 const fs = require('fs');
@@ -553,42 +554,23 @@ router.post('/register', async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '密码长度必须在6-20位之间' });
     }
 
-    // 审核昵称（如果启用了内容审核）
-    let finalNickname = nickname;
-    let nicknameAuditPassed = true;
-    
-    if (isAuditEnabled()) {
-      try {
-        const nicknameAuditResult = await auditNickname(nickname, user_id);
-        
-        // 如果审核不通过，将昵称改为随机10位数字
-        if (nicknameAuditResult && nicknameAuditResult.passed === false) {
-          nicknameAuditPassed = false;
-          // 生成随机10位数字作为昵称
-          finalNickname = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-          console.log(`昵称审核不通过，原昵称: ${nickname}，替换为: ${finalNickname}`);
-        }
-      } catch (auditError) {
-        console.error('昵称审核异常:', auditError);
-        // 审核异常时不阻塞注册，使用原昵称继续流程
-      }
-    }
-
-    // 获取用户User-Agent
+    // 获取用户User-Agent和IP
     const userAgent = req.headers['user-agent'] || '';
+    const userIP = getRealIP(req);
     // 默认头像使用空字符串，前端会使用本地默认头像
     const defaultAvatar = '';
 
     // 插入新用户（密码使用SHA2哈希加密）
     // 邮件功能未启用时，email字段存储空字符串
-    // 注意：IP属地获取改为异步，不阻塞注册流程
-    // 如果昵称审核不通过，使用替换后的昵称
+    // 昵称初始设置为用户输入的昵称，但nickname_visible默认为false
+    // 昵称审核和IP属地更新通过队列异步处理
     const userEmail = isEmailEnabled ? email : '';
     const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
     const newUser = await prisma.user.create({
       data: {
         user_id: user_id,
-        nickname: finalNickname,
+        nickname: nickname,
+        nickname_visible: false, // 昵称初始不可见，审核后决定
         password: hashedPassword,
         email: userEmail,
         avatar: defaultAvatar,
@@ -597,16 +579,13 @@ router.post('/register', async (req, res) => {
       }
     });
 
-    // 异步更新IP属地（不阻塞注册响应）
-    const userIP = getRealIP(req);
-    getIPLocation(userIP).then(ipLocation => {
-      if (ipLocation && ipLocation !== '未知') {
-        prisma.user.update({
-          where: { id: newUser.id },
-          data: { location: ipLocation }
-        }).catch(err => console.error('更新IP属地失败:', err.message));
-      }
-    }).catch(err => console.error('获取IP属地失败:', err.message));
+    // 将昵称审核和IP属地更新任务加入队列异步处理
+    registrationQueue.addTask({
+      userId: newUser.id,
+      nickname: nickname,
+      userIdStr: user_id,
+      userIP: userIP
+    });
 
     const userId = newUser.id;
 
@@ -627,6 +606,7 @@ router.post('/register', async (req, res) => {
     });
 
     // 使用创建时返回的用户数据，避免额外的数据库查询
+    // 注意：对于用户自己，始终显示原始昵称
     const userInfo = {
       id: Number(newUser.id),
       user_id: newUser.user_id,

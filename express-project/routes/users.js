@@ -31,7 +31,7 @@ router.get('/search', optionalAuth, async (req, res) => {
         ]
       },
       select: {
-        id: true, user_id: true, nickname: true, avatar: true, bio: true,
+        id: true, user_id: true, nickname: true, nickname_visible: true, avatar: true, bio: true,
         location: true, follow_count: true, fans_count: true, like_count: true,
         created_at: true, verified: true,
         _count: { select: { posts: { where: { is_draft: false } } } }
@@ -41,23 +41,29 @@ router.get('/search', optionalAuth, async (req, res) => {
       skip: skip
     });
 
-    let formattedUsers = users.map(u => ({
-      id: Number(u.id),
-      user_id: u.user_id,
-      nickname: u.nickname,
-      avatar: u.avatar,
-      bio: u.bio,
-      location: u.location,
-      follow_count: u.follow_count,
-      fans_count: u.fans_count,
-      like_count: u.like_count,
-      created_at: u.created_at,
-      verified: u.verified,
-      post_count: u._count.posts,
-      isFollowing: false,
-      isMutual: false,
-      buttonType: 'follow'
-    }));
+    let formattedUsers = users.map(u => {
+      // 根据nickname_visible和是否是自己决定显示的昵称
+      const isSelf = currentUserId && currentUserId === u.id;
+      const displayNickname = (isSelf || u.nickname_visible) ? u.nickname : u.user_id;
+      
+      return {
+        id: Number(u.id),
+        user_id: u.user_id,
+        nickname: displayNickname,
+        avatar: u.avatar,
+        bio: u.bio,
+        location: u.location,
+        follow_count: u.follow_count,
+        fans_count: u.fans_count,
+        like_count: u.like_count,
+        created_at: u.created_at,
+        verified: u.verified,
+        post_count: u._count.posts,
+        isFollowing: false,
+        isMutual: false,
+        buttonType: 'follow'
+      };
+    });
 
     if (currentUserId) {
       const userIds = users.map(u => u.id);
@@ -275,9 +281,10 @@ router.get('/:id/personality-tags', async (req, res) => {
 });
 
 // 获取用户信息
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const userIdParam = req.params.id;
+    const currentUserId = req.user ? BigInt(req.user.id) : null;
 
     // 只通过汐社号(user_id)进行查找
     const user = await prisma.user.findUnique({
@@ -292,11 +299,22 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    // 判断是否是用户自己查看自己的资料
+    const isSelf = currentUserId && currentUserId === user.id;
+    
+    // 根据nickname_visible和是否是自己决定显示的昵称
+    // 如果是自己查看，始终显示真实昵称
+    // 如果不是自己且nickname_visible为false，显示用户ID作为昵称
+    let displayNickname = user.nickname;
+    if (!isSelf && user.nickname_visible === false) {
+      displayNickname = user.user_id;
+    }
+
     // 格式化用户数据
     const userData = {
       id: Number(user.id),
       user_id: user.user_id,
-      nickname: user.nickname,
+      nickname: displayNickname,
       avatar: user.avatar,
       bio: user.bio,
       location: user.location,
@@ -321,15 +339,16 @@ router.get('/:id', async (req, res) => {
 });
 
 // 获取用户列表
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
+    const currentUserId = req.user ? BigInt(req.user.id) : null;
 
     const users = await prisma.user.findMany({
       select: {
-        id: true, user_id: true, nickname: true, avatar: true, bio: true,
+        id: true, user_id: true, nickname: true, nickname_visible: true, avatar: true, bio: true,
         location: true, follow_count: true, fans_count: true, like_count: true, created_at: true
       },
       orderBy: { created_at: 'desc' },
@@ -337,10 +356,24 @@ router.get('/', async (req, res) => {
       skip: skip
     });
 
-    const formattedUsers = users.map(u => ({
-      ...u,
-      id: Number(u.id)
-    }));
+    const formattedUsers = users.map(u => {
+      // 根据nickname_visible和是否是自己决定显示的昵称
+      const isSelf = currentUserId && currentUserId === u.id;
+      const displayNickname = (isSelf || u.nickname_visible) ? u.nickname : u.user_id;
+      
+      return {
+        id: Number(u.id),
+        user_id: u.user_id,
+        nickname: displayNickname,
+        avatar: u.avatar,
+        bio: u.bio,
+        location: u.location,
+        follow_count: u.follow_count,
+        fans_count: u.fans_count,
+        like_count: u.like_count,
+        created_at: u.created_at
+      };
+    });
 
     const total = await prisma.user.count();
 
