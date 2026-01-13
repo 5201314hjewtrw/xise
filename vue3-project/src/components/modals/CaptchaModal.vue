@@ -19,10 +19,46 @@
         </div>
 
         <div class="captcha-inputs">
-          <input v-for="(char, index) in captchaInputs" :key="index" type="text" :value="char"
-            @input="handleInputChange($event, index)" @keydown="handleKeyDown($event, index)"
-            @paste="handlePaste($event, index)" class="captcha-input-box" maxlength="1"
-            autocomplete="off" :ref="el => inputRefs[index] = el" />
+          <div v-for="(char, index) in captchaInputs" :key="index" 
+            class="captcha-input-box"
+            :class="{ 'active': activeIndex === index }">
+            {{ char }}
+          </div>
+        </div>
+
+        <!-- 自定义键盘 -->
+        <div class="custom-keyboard">
+          <div class="keyboard-row">
+            <button v-for="key in keyboardRowLetters1" :key="key" 
+              class="keyboard-key" 
+              @click="handleKeyboardInput(key)">
+              {{ key }}
+            </button>
+          </div>
+          <div class="keyboard-row">
+            <button v-for="key in keyboardRowLetters2" :key="key" 
+              class="keyboard-key" 
+              @click="handleKeyboardInput(key)">
+              {{ key }}
+            </button>
+          </div>
+          <div class="keyboard-row">
+            <button v-for="key in keyboardRowLetters3" :key="key" 
+              class="keyboard-key" 
+              @click="handleKeyboardInput(key)">
+              {{ key }}
+            </button>
+          </div>
+          <div class="keyboard-row">
+            <button v-for="key in keyboardRowNumbers" :key="key" 
+              class="keyboard-key" 
+              @click="handleKeyboardInput(key)">
+              {{ key }}
+            </button>
+            <button class="keyboard-key keyboard-key-delete" @click="handleKeyboardDelete">
+              <SvgIcon name="delete" width="18" height="18" />
+            </button>
+          </div>
         </div>
       </div>
       <div class="form-actions">
@@ -63,18 +99,21 @@ const props = defineProps({
 const emit = defineEmits(['close', 'refresh', 'confirm', 'update:captchaText'])
 
 const { captchaText } = toRefs(props)
-const inputRefs = ref([])
 const captchaInputs = ref(['', '', '', ''])
+const activeIndex = ref(0)
 
-// 监听show变化，在模态框显示时聚焦第一个输入框并清空输入
+// 键盘布局 - 排除容易混淆的字符（与后端一致：0o1ilcIC）
+const keyboardRowLetters1 = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'P']
+const keyboardRowLetters2 = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K']
+const keyboardRowLetters3 = ['Z', 'X', 'V', 'B', 'N', 'M', 'L']
+const keyboardRowNumbers = ['2', '3', '4', '5', '6', '7', '8', '9']
+
+// 监听show变化，在模态框显示时清空输入
 watch(() => props.show, (newValue) => {
   if (newValue) {
     // 清空所有输入框
     captchaInputs.value = ['', '', '', '']
-    // 聚焦第一个输入框
-    nextTick(() => {
-      inputRefs.value[0]?.focus()
-    })
+    activeIndex.value = 0
   }
 })
 
@@ -82,87 +121,40 @@ watch(() => props.show, (newValue) => {
 watch(() => props.captchaSvg, () => {
   // 清空所有输入框
   captchaInputs.value = ['', '', '', '']
+  activeIndex.value = 0
   // 更新验证码文本
   emit('update:captchaText', '')
-  // 聚焦第一个输入框
-  nextTick(() => {
-    inputRefs.value[0]?.focus()
-  })
 })
 
-
-const handleInputChange = (event, index) => {
-  const value = event.target.value
-  if (value.length > 1) {
-    event.target.value = value[0]
-    captchaInputs.value[index] = value[0]
-  } else {
-    captchaInputs.value[index] = value
-  }
-
+// 处理自定义键盘输入
+const handleKeyboardInput = (key) => {
+  if (activeIndex.value >= 4) return
+  
+  captchaInputs.value[activeIndex.value] = key
+  
   // 更新完整的验证码
   const fullCode = captchaInputs.value.join('')
   emit('update:captchaText', fullCode)
-  if (value) {
-    // 从当前位置的下一个开始找空的输入框
-    for (let i = index + 1; i < captchaInputs.value.length; i++) {
-      if (!captchaInputs.value[i]) {
-        inputRefs.value[i]?.focus()
-        return
-      }
-    }
-    // 如果右侧没有空的输入框，聚焦到最后一个
-    inputRefs.value[3]?.focus()
+  
+  // 移动到下一个位置
+  if (activeIndex.value < 3) {
+    activeIndex.value++
   }
 }
 
-const handleKeyDown = (event, index) => {
-  // 退格键处理
-  if (event.key === 'Backspace') {
-    if (captchaInputs.value[index]) {
-      // 如果当前输入框有内容，清空它
-      captchaInputs.value[index] = ''
-      const fullCode = captchaInputs.value.join('')
-      emit('update:captchaText', fullCode)
-    } else if (index > 0) {
-      // 如果当前输入框为空，跳转到前一个输入框并清空它
-      captchaInputs.value[index - 1] = ''
-      const fullCode = captchaInputs.value.join('')
-      emit('update:captchaText', fullCode)
-      inputRefs.value[index - 1]?.focus()
-    }
-    event.preventDefault()
+// 处理删除键
+const handleKeyboardDelete = () => {
+  if (activeIndex.value > 0 && !captchaInputs.value[activeIndex.value]) {
+    // 当前位置为空，回退到上一个位置并删除
+    activeIndex.value--
   }
-  // 回车键确认
-  if (event.key === 'Enter') {
-    emit('confirm')
-  }
-  // 左右箭头键导航
-  if (event.key === 'ArrowLeft' && index > 0) {
-    inputRefs.value[index - 1]?.focus()
-  }
-  if (event.key === 'ArrowRight' && index < 3) {
-    inputRefs.value[index + 1]?.focus()
-  }
-}
-
-const handlePaste = (event, index) => {
-  event.preventDefault()
-  const pastedText = event.clipboardData.getData('text').slice(0, 4)
-  const chars = pastedText.split('')
-
-  // 填充从当前位置开始的输入框
-  for (let i = 0; i < chars.length && (index + i) < 4; i++) {
-    captchaInputs.value[index + i] = chars[i]
-  }
-
+  
+  // 清空当前位置
+  captchaInputs.value[activeIndex.value] = ''
+  
   // 更新完整的验证码
   const fullCode = captchaInputs.value.join('')
   emit('update:captchaText', fullCode)
-
-  // 聚焦到最后一个填充的输入框的下一个
-  const nextIndex = Math.min(index + chars.length, 3)
-  inputRefs.value[nextIndex]?.focus()
 }
 </script>
 
@@ -183,8 +175,8 @@ const handlePaste = (event, index) => {
 .captcha-modal {
   background: var(--bg-color-primary);
   border-radius: 16px;
-  width: 250px;
-  max-width: 90vw;
+  width: 320px;
+  max-width: 95vw;
   overflow: hidden;
   border: 1px solid var(--border-color-primary);
 }
@@ -329,15 +321,74 @@ const handlePaste = (event, index) => {
   text-align: center;
   background: var(--bg-color-primary);
   color: var(--text-color-primary);
-  caret-color: var(--primary-color);
   transition: all 0.2s ease;
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.captcha-input-box:focus {
-  outline: none;
+.captcha-input-box.active {
   border-color: var(--primary-color);
+  background: var(--bg-color-secondary);
+}
+
+/* 自定义键盘样式 */
+.custom-keyboard {
+  width: 100%;
+  padding: 8px 4px;
+  background: var(--bg-color-secondary);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.keyboard-row {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.keyboard-row:last-child {
+  margin-bottom: 0;
+}
+
+.keyboard-key {
+  min-width: 28px;
+  height: 36px;
+  border: none;
+  border-radius: 6px;
   background: var(--bg-color-primary);
+  color: var(--text-color-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.keyboard-key:hover {
+  background: var(--bg-color-tertiary);
+}
+
+.keyboard-key:active {
+  transform: scale(0.95);
+  background: var(--primary-color);
+  color: white;
+}
+
+.keyboard-key-delete {
+  min-width: 42px;
+  background: var(--bg-color-tertiary);
+  color: var(--text-color-secondary);
+}
+
+.keyboard-key-delete:hover {
+  background: var(--primary-color);
+  color: white;
 }
 
 

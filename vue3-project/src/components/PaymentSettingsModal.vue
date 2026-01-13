@@ -21,33 +21,6 @@
         </div>
 
         <template v-if="localSettings.enabled">
-          <!-- 付费类型选择 -->
-          <div class="setting-item">
-            <div class="setting-label">
-              <span class="label-text">付费类型</span>
-            </div>
-            <div class="payment-type-options">
-              <button 
-                type="button"
-                class="type-option" 
-                :class="{ active: localSettings.paymentType === 'single' }"
-                @click="localSettings.paymentType = 'single'"
-              >
-                <SvgIcon name="post" width="20" height="20" />
-                <span>单篇付费</span>
-              </button>
-              <button 
-                type="button"
-                class="type-option" 
-                :class="{ active: localSettings.paymentType === 'multi' }"
-                @click="localSettings.paymentType = 'multi'"
-              >
-                <SvgIcon name="image" width="20" height="20" />
-                <span>多篇付费</span>
-              </button>
-            </div>
-          </div>
-
           <!-- 价格设置 -->
           <div class="setting-item">
             <div class="setting-label">
@@ -128,12 +101,7 @@
           <div class="payment-note">
             <SvgIcon name="info" width="16" height="16" />
             <span>
-              <template v-if="localSettings.paymentType === 'single'">
-                用户支付 {{ localSettings.price || 0 }} 石榴点后可永久查看本篇内容
-              </template>
-              <template v-else>
-                用户支付 {{ localSettings.price || 0 }} 石榴点后可查看您的所有付费内容
-              </template>
+              用户支付 {{ localSettings.price || 0 }} 石榴点后可永久查看本篇内容
             </span>
           </div>
 
@@ -381,43 +349,6 @@ const handleConfirm = () => {
   transform: translateX(22px);
 }
 
-/* Payment Type Options */
-.payment-type-options {
-  display: flex;
-  gap: 12px;
-}
-
-.type-option {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
-  border: 2px solid var(--border-color-primary);
-  border-radius: 12px;
-  background: var(--bg-color-primary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--text-color-secondary);
-}
-
-.type-option:hover {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-}
-
-.type-option.active {
-  border-color: var(--primary-color);
-  background: rgba(var(--primary-color-rgb), 0.05);
-  color: var(--primary-color);
-}
-
-.type-option span {
-  font-size: 14px;
-  font-weight: 500;
-}
-
 /* Price Input */
 .price-input-wrapper {
   display: flex;
@@ -602,17 +533,6 @@ const handleConfirm = () => {
   .modal {
     width: 95%;
     max-height: 85vh;
-  }
-  
-  .payment-type-options {
-    flex-direction: column;
-  }
-  
-  .type-option {
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 12px;
-    padding: 12px 16px;
   }
 }
 </style>

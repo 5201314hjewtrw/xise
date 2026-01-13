@@ -503,7 +503,7 @@ router.post('/register', async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '验证码已过期' });
     }
 
-    if (captchaText !== storedCaptcha.text) {
+    if (captchaText.toLowerCase() !== storedCaptcha.text.toLowerCase()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '验证码错误' });
     }
 
