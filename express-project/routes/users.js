@@ -7,7 +7,7 @@ const { optionalAuth, authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const { protectPostListItem } = require('../utils/paidContentHelper');
 const { auditNickname, auditBio, isAuditEnabled } = require('../utils/contentAudit');
-const { addContentAuditTask, addAuditLogTask, isQueueEnabled } = require('../utils/queueService');
+const { addContentAuditTask, addAuditLogTask, isQueueEnabled, generateRandomNickname } = require('../utils/queueService');
 const { checkUsernameBannedWords, checkBioBannedWords, getBannedWordAuditResult } = require('../utils/bannedWordsChecker');
 
 // 内容最大长度限制
@@ -309,8 +309,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
         // 待审核：显示提示文字
         displayBio = '正在等待审核';
       } else if (bioAuditStatus === 2) {
-        // 已拒绝：隐藏简介
-        displayBio = '';
+        // 已拒绝：显示内容审核失败
+        displayBio = '内容审核失败';
       }
       // 已通过(1)：正常显示
     }
@@ -433,7 +433,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (nicknameChanged) {
       const nicknameCheck = await checkUsernameBannedWords(prisma, trimmedNickname);
       if (nicknameCheck.matched) {
-        // 触发本地违禁词，记录并拒绝
+        // 触发本地违禁词，生成随机昵称替换
+        const randomNickname = generateRandomNickname();
+        updateData.nickname = randomNickname;
         addAuditLogTask({
           userId: Number(targetUserId),
           type: AUDIT_TYPES.NICKNAME,
@@ -442,22 +444,22 @@ router.put('/:id', authenticateToken, async (req, res) => {
           auditResult: getBannedWordAuditResult(nicknameCheck.matchedWords),
           riskLevel: 'high',
           categories: ['banned_word'],
-          reason: `[本地违禁词拒绝] 昵称触发违禁词: ${nicknameCheck.matchedWords.join(', ')}`,
+          reason: `[本地违禁词拒绝] 昵称触发违禁词: ${nicknameCheck.matchedWords.join(', ')}，已自动替换为随机昵称: ${randomNickname}`,
           status: AUDIT_STATUS.REJECTED
         });
-        return res.status(HTTP_STATUS.BAD_REQUEST).json({
-          code: RESPONSE_CODES.VALIDATION_ERROR,
-          message: '昵称包含违禁词，请修改后重试'
-        });
-      }
-      
-      // 如果启用了审核，添加异步审核任务
-      if (isAuditEnabled()) {
+      } else if (isAuditEnabled()) {
+        // 如果启用了审核，添加异步审核任务
         if (isQueueEnabled()) {
           addContentAuditTask(trimmedNickname, Number(targetUserId), 'nickname', Number(targetUserId));
         } else {
           // 同步审核
           const auditResult = await auditNickname(trimmedNickname, Number(targetUserId));
+          let replacementNickname = null;
+          if (!auditResult?.passed) {
+            // AI审核不通过，生成随机昵称替换
+            replacementNickname = generateRandomNickname();
+            updateData.nickname = replacementNickname;
+          }
           addAuditLogTask({
             userId: Number(targetUserId),
             type: AUDIT_TYPES.NICKNAME,
@@ -466,8 +468,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
             auditResult: auditResult,
             riskLevel: auditResult?.risk_level || 'low',
             categories: auditResult?.categories || [],
-            reason: auditResult?.passed ? '[AI审核通过] 昵称审核通过' : `[AI审核] ${auditResult?.reason || '昵称审核未通过'}`,
-            status: auditResult?.passed ? AUDIT_STATUS.APPROVED : AUDIT_STATUS.PENDING
+            reason: auditResult?.passed ? '[AI审核通过] 昵称审核通过' : `[AI审核拒绝] ${auditResult?.reason || '昵称审核未通过'}，已自动替换为随机昵称: ${replacementNickname}`,
+            status: auditResult?.passed ? AUDIT_STATUS.APPROVED : AUDIT_STATUS.REJECTED
           });
         }
       }
@@ -477,7 +479,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (bioChanged && trimmedBio) {
       const bioCheck = await checkBioBannedWords(prisma, trimmedBio);
       if (bioCheck.matched) {
-        // 触发本地违禁词，设置简介为拒绝状态
+        // 触发本地违禁词，设置简介为空并拒绝
+        updateData.bio = '';
         updateData.bio_audit_status = AUDIT_STATUS.REJECTED;
         addAuditLogTask({
           userId: Number(targetUserId),
@@ -487,7 +490,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           auditResult: getBannedWordAuditResult(bioCheck.matchedWords),
           riskLevel: 'high',
           categories: ['banned_word'],
-          reason: `[本地违禁词拒绝] 个人简介触发违禁词: ${bioCheck.matchedWords.join(', ')}`,
+          reason: `[本地违禁词拒绝] 个人简介触发违禁词: ${bioCheck.matchedWords.join(', ')}，已自动清空简介`,
           status: AUDIT_STATUS.REJECTED
         });
       } else if (isAuditEnabled()) {
@@ -500,6 +503,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
           const auditResult = await auditBio(trimmedBio, Number(targetUserId));
           const passed = auditResult?.passed !== false;
           updateData.bio_audit_status = passed ? AUDIT_STATUS.APPROVED : AUDIT_STATUS.REJECTED;
+          if (!passed) {
+            // AI审核不通过，清空简介
+            updateData.bio = '';
+          }
           addAuditLogTask({
             userId: Number(targetUserId),
             type: AUDIT_TYPES.BIO,
@@ -508,7 +515,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
             auditResult: auditResult,
             riskLevel: auditResult?.risk_level || 'low',
             categories: auditResult?.categories || [],
-            reason: passed ? '[AI审核通过] 个人简介审核通过' : `[AI审核拒绝] ${auditResult?.reason || '个人简介不符合规范'}`,
+            reason: passed ? '[AI审核通过] 个人简介审核通过' : `[AI审核拒绝] ${auditResult?.reason || '个人简介不符合规范'}，已自动清空简介`,
             status: passed ? AUDIT_STATUS.APPROVED : AUDIT_STATUS.REJECTED
           });
         }
