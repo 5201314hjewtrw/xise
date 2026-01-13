@@ -442,7 +442,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           auditResult: getBannedWordAuditResult(nicknameCheck.matchedWords),
           riskLevel: 'high',
           categories: ['banned_word'],
-          reason: `[本地违禁词拦截] 昵称触发违禁词: ${nicknameCheck.matchedWords.join(', ')}`,
+          reason: `[本地违禁词拒绝] 昵称触发违禁词: ${nicknameCheck.matchedWords.join(', ')}`,
           status: AUDIT_STATUS.REJECTED
         });
         return res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -477,8 +477,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (bioChanged && trimmedBio) {
       const bioCheck = await checkBioBannedWords(prisma, trimmedBio);
       if (bioCheck.matched) {
-        // 触发本地违禁词，设置简介为待审核状态
-        updateData.bio_audit_status = 2; // 拒绝
+        // 触发本地违禁词，设置简介为拒绝状态
+        updateData.bio_audit_status = AUDIT_STATUS.REJECTED;
         addAuditLogTask({
           userId: Number(targetUserId),
           type: AUDIT_TYPES.BIO,
@@ -487,7 +487,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           auditResult: getBannedWordAuditResult(bioCheck.matchedWords),
           riskLevel: 'high',
           categories: ['banned_word'],
-          reason: `[本地违禁词拦截] 个人简介触发违禁词: ${bioCheck.matchedWords.join(', ')}`,
+          reason: `[本地违禁词拒绝] 个人简介触发违禁词: ${bioCheck.matchedWords.join(', ')}`,
           status: AUDIT_STATUS.REJECTED
         });
       } else if (isAuditEnabled()) {

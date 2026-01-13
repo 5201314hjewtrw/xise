@@ -240,7 +240,7 @@ router.post('/', authenticateToken, async (req, res) => {
         auditResult: bannedWordAuditResult,
         riskLevel: 'high',
         categories: ['banned_word'],
-        reason: `[本地违禁词拦截] 触发违禁词: ${bannedWordCheck.matchedWords.join(', ')}`,
+        reason: `[本地违禁词拒绝] 触发违禁词: ${bannedWordCheck.matchedWords.join(', ')}`,
         status: AUDIT_STATUS.REJECTED
       });
       

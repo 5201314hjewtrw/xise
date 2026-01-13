@@ -79,7 +79,7 @@
 
     <!-- 批量导入弹窗 -->
     <div v-if="showImportModal" class="modal-overlay" @click="showImportModal = false">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content import-modal" @click.stop>
         <div class="modal-header">
           <h3>批量导入违禁词</h3>
           <button class="close-btn" @click="showImportModal = false">&times;</button>
@@ -94,8 +94,55 @@
             </select>
           </div>
           <div class="form-group">
+            <label>导入方式</label>
+            <div class="import-tabs">
+              <button 
+                class="tab-btn" 
+                :class="{ active: importData.mode === 'text' }"
+                @click="importData.mode = 'text'"
+              >手动输入</button>
+              <button 
+                class="tab-btn" 
+                :class="{ active: importData.mode === 'file' }"
+                @click="importData.mode = 'file'"
+              >TXT文件导入</button>
+            </div>
+          </div>
+          <!-- 手动输入模式 -->
+          <div v-if="importData.mode === 'text'" class="form-group">
             <label>违禁词列表（每行一个）</label>
             <textarea v-model="importData.text" rows="10" placeholder="每行输入一个违禁词&#10;支持 * 和 ? 通配符&#10;例如:&#10;敏感词1&#10;敏感*词&#10;test?word"></textarea>
+          </div>
+          <!-- 文件导入模式 -->
+          <div v-if="importData.mode === 'file'" class="form-group">
+            <label>选择TXT文件</label>
+            <div class="file-upload-area">
+              <input 
+                type="file" 
+                ref="fileInput"
+                accept=".txt"
+                @change="handleFileSelect"
+                class="file-input"
+              />
+              <div v-if="!importData.fileName" class="file-placeholder">
+                <span class="file-icon">📄</span>
+                <span>点击或拖拽TXT文件到此处</span>
+                <span class="file-hint">每行一个违禁词</span>
+              </div>
+              <div v-else class="file-selected">
+                <span class="file-icon">✅</span>
+                <span>{{ importData.fileName }}</span>
+                <span class="file-count">{{ importData.wordCount }} 个词</span>
+                <button class="clear-file-btn" @click="clearFile">×</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="importData.isRegex" />
+              <span>全部设为正则模式</span>
+            </label>
+            <span class="hint">启用后，所有导入的词条都将使用通配符匹配</span>
           </div>
         </div>
         <div class="modal-footer">
@@ -125,6 +172,9 @@ const showImportModal = ref(false)
 // 导出类型
 const exportType = ref('')
 
+// 文件输入引用
+const fileInput = ref(null)
+
 // 新增违禁词表单
 const newWord = ref({
   word: '',
@@ -135,7 +185,12 @@ const newWord = ref({
 // 批量导入数据
 const importData = ref({
   type: 1,
-  text: ''
+  text: '',
+  mode: 'text',
+  fileName: '',
+  wordCount: 0,
+  fileWords: [],
+  isRegex: false
 })
 
 // 监听违禁词内容，自动设置正则模式
@@ -144,6 +199,49 @@ watch(() => newWord.value.word, (val) => {
     newWord.value.is_regex = true
   }
 })
+
+// 处理文件选择
+const handleFileSelect = (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  // 验证文件类型
+  if (!file.name.endsWith('.txt') && file.type !== 'text/plain') {
+    showMessage('请选择TXT文件', 'error')
+    return
+  }
+  
+  // 验证文件大小（限制2MB）
+  const maxSize = 2 * 1024 * 1024
+  if (file.size > maxSize) {
+    showMessage('文件过大，请选择小于2MB的文件', 'error')
+    return
+  }
+  
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const content = e.target.result
+    // 处理Windows和Unix换行符
+    const words = content.split(/\r?\n/).filter(w => w.trim()).map(w => w.trim())
+    importData.value.fileName = file.name
+    importData.value.wordCount = words.length
+    importData.value.fileWords = words
+  }
+  reader.onerror = () => {
+    showMessage('文件读取失败', 'error')
+  }
+  reader.readAsText(file, 'UTF-8')
+}
+
+// 清除文件
+const clearFile = () => {
+  importData.value.fileName = ''
+  importData.value.wordCount = 0
+  importData.value.fileWords = []
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
 
 // 消息提示方法
 const showMessage = (message, type = 'success') => {
@@ -198,9 +296,16 @@ const handleAddWord = async () => {
 
 // 批量导入
 const handleImport = async () => {
-  const words = importData.value.text.split('\n').filter(w => w.trim())
+  // 根据导入模式获取词列表
+  let words = []
+  if (importData.value.mode === 'file') {
+    words = importData.value.fileWords
+  } else {
+    words = importData.value.text.split('\n').filter(w => w.trim())
+  }
+  
   if (words.length === 0) {
-    showMessage('请输入违禁词', 'error')
+    showMessage('请输入或选择违禁词文件', 'error')
     return
   }
 
@@ -210,14 +315,15 @@ const handleImport = async () => {
       headers: getAuthHeaders(),
       body: JSON.stringify({
         type: importData.value.type,
-        words: words
+        words: words,
+        isRegex: importData.value.isRegex
       })
     })
     const result = await response.json()
     if (result.code === 200) {
       showMessage(`成功导入 ${result.data.count} 个违禁词`)
       showImportModal.value = false
-      importData.value = { type: 1, text: '' }
+      importData.value = { type: 1, text: '', mode: 'text', fileName: '', wordCount: 0, fileWords: [], isRegex: false }
       location.reload()
     } else {
       showMessage('导入失败: ' + result.message, 'error')
@@ -593,6 +699,119 @@ const searchFields = [
   gap: 12px;
   padding: 16px 20px;
   border-top: 1px solid var(--border-color-primary);
+}
+
+/* Import modal styles */
+.import-modal {
+  max-width: 550px;
+}
+
+.import-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--border-color-primary);
+  background: var(--bg-color-primary);
+  color: var(--text-color-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  background: var(--bg-color-secondary);
+}
+
+.tab-btn.active {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.file-upload-area {
+  position: relative;
+  border: 2px dashed var(--border-color-primary);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+
+.file-upload-area:hover {
+  border-color: var(--primary-color);
+  background: rgba(var(--primary-color-rgb), 0.05);
+}
+
+.file-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-color-secondary);
+}
+
+.file-icon {
+  font-size: 32px;
+}
+
+.file-hint {
+  font-size: 12px;
+  color: var(--text-color-tertiary);
+}
+
+.file-selected {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-color-primary);
+}
+
+.file-count {
+  padding: 2px 8px;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.clear-file-btn {
+  background: none;
+  border: none;
+  color: var(--text-color-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.clear-file-btn:hover {
+  color: #e74c3c;
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0 !important;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
 }
 
 /* Status styles */

@@ -2835,7 +2835,7 @@ router.delete('/banned-words', adminAuth, async (req, res) => {
 // 批量导入违禁词
 router.post('/banned-words/import', adminAuth, async (req, res) => {
   try {
-    const { words, type } = req.body
+    const { words, type, isRegex } = req.body
 
     if (!words || !Array.isArray(words) || words.length === 0) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要导入的违禁词列表' })
@@ -2848,12 +2848,12 @@ router.post('/banned-words/import', adminAuth, async (req, res) => {
     // 过滤空值和重复值
     const uniqueWords = [...new Set(words.filter(w => w && w.trim()).map(w => w.trim()))]
 
-    // 批量创建
+    // 批量创建，如果指定了isRegex则使用该值，否则自动检测通配符
     const created = await prisma.bannedWord.createMany({
       data: uniqueWords.map(word => ({
         word,
         type: parseInt(type),
-        is_regex: word.includes('*') || word.includes('?'),
+        is_regex: isRegex || word.includes('*') || word.includes('?'),
         enabled: true
       })),
       skipDuplicates: true
