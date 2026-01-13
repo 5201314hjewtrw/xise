@@ -76,10 +76,10 @@ router.get('/captcha', (req, res) => {
     // 生成唯一的captchaId
     const captchaId = Date.now() + Math.random().toString(36).substr(2, 9);
 
-    // 存储验证码（半分钟过期）
+    // 存储验证码（5分钟过期）
     captchaStore.set(captchaId, {
       text: captcha.text, // 保持原始大小写
-      expires: Date.now() + 30 * 1000 // 半分钟过期
+      expires: Date.now() + 5 * 60 * 1000 // 5分钟过期
     });
 
     // 清理过期的验证码
