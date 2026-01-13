@@ -554,24 +554,23 @@ router.post('/register', async (req, res) => {
     }
 
     // 审核昵称（如果启用了内容审核）
+    let finalNickname = nickname;
+    let nicknameAuditPassed = true;
+    
     if (isAuditEnabled()) {
       try {
         const nicknameAuditResult = await auditNickname(nickname, user_id);
         
-        // 确保审核结果存在并且不通过
+        // 如果审核不通过，将昵称改为随机10位数字
         if (nicknameAuditResult && nicknameAuditResult.passed === false) {
-          // 昵称审核不通过，拒绝注册
-          return res.status(HTTP_STATUS.BAD_REQUEST).json({ 
-            code: RESPONSE_CODES.VALIDATION_ERROR, 
-            message: '昵称包含敏感内容，请修改后重试',
-            data: {
-              reason: nicknameAuditResult.reason || '昵称不符合社区规范'
-            }
-          });
+          nicknameAuditPassed = false;
+          // 生成随机10位数字作为昵称
+          finalNickname = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+          console.log(`昵称审核不通过，原昵称: ${nickname}，替换为: ${finalNickname}`);
         }
       } catch (auditError) {
         console.error('昵称审核异常:', auditError);
-        // 审核异常时不阻塞注册，继续流程
+        // 审核异常时不阻塞注册，使用原昵称继续流程
       }
     }
 
@@ -583,12 +582,13 @@ router.post('/register', async (req, res) => {
     // 插入新用户（密码使用SHA2哈希加密）
     // 邮件功能未启用时，email字段存储空字符串
     // 注意：IP属地获取改为异步，不阻塞注册流程
+    // 如果昵称审核不通过，使用替换后的昵称
     const userEmail = isEmailEnabled ? email : '';
     const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
     const newUser = await prisma.user.create({
       data: {
         user_id: user_id,
-        nickname: nickname,
+        nickname: finalNickname,
         password: hashedPassword,
         email: userEmail,
         avatar: defaultAvatar,
