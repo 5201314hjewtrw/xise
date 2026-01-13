@@ -135,7 +135,7 @@ const props = defineProps({
     type: Object,
     default: () => ({
       enabled: false,
-      paymentType: 'single',
+      paymentType: 'single', // 保留用于向后兼容，当前只支持单篇付费
       price: 0,
       freePreviewCount: 0,
       previewDuration: 0,
@@ -167,7 +167,7 @@ const { lock, unlock } = useScrollLock()
 // 本地设置副本
 const localSettings = reactive({
   enabled: false,
-  paymentType: 'single',
+  paymentType: 'single', // 保留用于向后兼容，当前只支持单篇付费
   price: 0,
   freePreviewCount: 0,
   previewDuration: 0,

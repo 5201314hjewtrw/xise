@@ -104,8 +104,8 @@ const activeIndex = ref(0)
 
 // 键盘布局 - 排除容易混淆的字符（与后端一致：0o1ilcIC）
 const keyboardRowLetters1 = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'P']
-const keyboardRowLetters2 = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K']
-const keyboardRowLetters3 = ['Z', 'X', 'V', 'B', 'N', 'M', 'L']
+const keyboardRowLetters2 = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L']
+const keyboardRowLetters3 = ['Z', 'X', 'V', 'B', 'N', 'M']
 const keyboardRowNumbers = ['2', '3', '4', '5', '6', '7', '8', '9']
 
 // 监听show变化，在模态框显示时清空输入
