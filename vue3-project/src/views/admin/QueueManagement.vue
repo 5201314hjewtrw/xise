@@ -76,6 +76,39 @@
               <span class="job-name">{{ job.name }}</span>
               <span class="job-time">{{ formatTime(job.timestamp) }}</span>
             </div>
+            <!-- 时间统计信息 -->
+            <div class="job-timing">
+              <span class="timing-item" title="入队时间">
+                <span class="timing-label">入队:</span>
+                <span class="timing-value">{{ formatTime(job.timestamp) }}</span>
+              </span>
+              <span v-if="job.processedOn" class="timing-item" title="开始处理时间">
+                <span class="timing-label">处理:</span>
+                <span class="timing-value">{{ formatTime(job.processedOn) }}</span>
+              </span>
+              <span v-if="job.finishedOn" class="timing-item" title="完成时间">
+                <span class="timing-label">完成:</span>
+                <span class="timing-value">{{ formatTime(job.finishedOn) }}</span>
+              </span>
+            </div>
+            <!-- 耗时统计 -->
+            <div v-if="job.timing" class="job-timing-stats">
+              <span v-if="job.timing.waitTimeSeconds" class="timing-stat" title="等待时间（入队到开始处理）">
+                <span class="stat-icon">⏳</span>
+                <span class="stat-label">等待:</span>
+                <span class="stat-value">{{ job.timing.waitTimeSeconds }}s</span>
+              </span>
+              <span v-if="job.timing.processTimeSeconds" class="timing-stat" title="处理时间（开始处理到完成）">
+                <span class="stat-icon">⚙️</span>
+                <span class="stat-label">处理:</span>
+                <span class="stat-value">{{ job.timing.processTimeSeconds }}s</span>
+              </span>
+              <span v-if="job.timing.totalTimeSeconds" class="timing-stat total" title="总耗时（入队到完成）">
+                <span class="stat-icon">✅</span>
+                <span class="stat-label">总耗时:</span>
+                <span class="stat-value">{{ job.timing.totalTimeSeconds }}s</span>
+              </span>
+            </div>
             <div class="job-data">
               <pre>{{ JSON.stringify(job.data, null, 2) }}</pre>
             </div>
@@ -111,6 +144,7 @@ const jobStatus = ref('waiting')
 const queueNameMap = {
   'ip-location-update': 'IP属地更新',
   'content-audit': '内容审核',
+  'audit-log': '审核日志',
   'general-task': '通用任务'
 }
 
@@ -490,5 +524,76 @@ onMounted(() => {
 .job-attempts {
   font-size: 12px;
   color: var(--text-color-secondary);
+}
+
+/* 时间统计样式 */
+.job-timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background-color: var(--bg-color-secondary);
+  border-radius: 6px;
+}
+
+.timing-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.timing-label {
+  color: var(--text-color-secondary);
+}
+
+.timing-value {
+  color: var(--text-color-primary);
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.job-timing-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(var(--primary-color-rgb), 0.05), rgba(var(--primary-color-rgb), 0.1));
+  border-radius: 6px;
+  border: 1px solid var(--border-color-primary);
+}
+
+.timing-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  padding: 4px 8px;
+  background-color: var(--bg-color-primary);
+  border-radius: 4px;
+}
+
+.stat-icon {
+  font-size: 12px;
+}
+
+.stat-label {
+  color: var(--text-color-secondary);
+}
+
+.stat-value {
+  font-weight: 600;
+  color: var(--primary-color);
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.timing-stat.total {
+  background-color: rgba(82, 196, 26, 0.1);
+  border: 1px solid rgba(82, 196, 26, 0.3);
+}
+
+.timing-stat.total .stat-value {
+  color: #52c41a;
 }
 </style>

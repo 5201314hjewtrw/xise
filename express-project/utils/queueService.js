@@ -570,18 +570,49 @@ async function getQueueJobs(queueName, status = 'waiting', start = 0, end = 20) 
 
     return {
       enabled: true,
-      jobs: jobs.map(job => ({
-        id: job.id,
-        name: job.name,
-        data: job.data,
-        timestamp: job.timestamp,
-        processedOn: job.processedOn,
-        finishedOn: job.finishedOn,
-        attempts: job.attemptsMade,
-        failedReason: job.failedReason,
-        // 包含任务返回结果（如AI审核结果）
-        returnValue: job.returnvalue || null
-      }))
+      jobs: jobs.map(job => {
+        // 计算处理时间和响应时间
+        const enqueuedAt = job.timestamp;
+        const processedOn = job.processedOn;
+        const finishedOn = job.finishedOn;
+        
+        // 计算等待时间（入队到开始处理）
+        let waitTimeSeconds = null;
+        if (processedOn && enqueuedAt) {
+          waitTimeSeconds = ((processedOn - enqueuedAt) / 1000).toFixed(1);
+        }
+        
+        // 计算处理时间（开始处理到完成）
+        let processTimeSeconds = null;
+        if (finishedOn && processedOn) {
+          processTimeSeconds = ((finishedOn - processedOn) / 1000).toFixed(1);
+        }
+        
+        // 计算总耗时（入队到完成）
+        let totalTimeSeconds = null;
+        if (finishedOn && enqueuedAt) {
+          totalTimeSeconds = ((finishedOn - enqueuedAt) / 1000).toFixed(1);
+        }
+        
+        return {
+          id: job.id,
+          name: job.name,
+          data: job.data,
+          timestamp: enqueuedAt,
+          processedOn: processedOn,
+          finishedOn: finishedOn,
+          attempts: job.attemptsMade,
+          failedReason: job.failedReason,
+          // 包含任务返回结果（如AI审核结果）
+          returnValue: job.returnvalue || null,
+          // 时间统计
+          timing: {
+            waitTimeSeconds,      // 等待时间（入队到开始处理）
+            processTimeSeconds,   // 处理时间（开始处理到完成）
+            totalTimeSeconds      // 总耗时（入队到完成）
+          }
+        };
+      })
     };
   } catch (error) {
     console.error(`获取队列 ${queueName} 任务列表失败:`, error.message);
