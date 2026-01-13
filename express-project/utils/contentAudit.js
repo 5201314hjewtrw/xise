@@ -58,6 +58,10 @@ async function auditContent(content, userId = 'system') {
   }
 
   try {
+    // 添加超时控制，3秒超时
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
     const response = await fetch(auditConfig.apiUrl, {
       method: 'POST',
       headers: {
@@ -71,8 +75,11 @@ async function auditContent(content, userId = 'system') {
         conversation_id: '',
         user: userId,
         files: []
-      })
+      }),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       console.error('Dify API请求失败:', response.status, response.statusText);

@@ -12,12 +12,12 @@ async function getIPLocation(ip) {
       return '本地';
     }
 
-    // 调用IP属地API
+    // 调用IP属地API（3秒超时，避免阻塞注册流程）
     const response = await axios.get(`https://api.pearktrue.cn/api/ip/details`, {
       params: {
         ip: ip
       },
-      timeout: 10000 // 10秒超时
+      timeout: 3000 // 3秒超时
     });
 
     if (response.data && response.data.code === 200 && response.data.data) {
@@ -30,13 +30,13 @@ async function getIPLocation(ip) {
       }
     }
 
-    // 如果主接口返回未知，尝试备用接口
+    // 如果主接口返回未知，尝试备用接口（2秒超时）
     try {
       const backupResponse = await axios.get(`https://api.pearktrue.cn/api/ip/high`, {
         params: {
           ip: ip
         },
-        timeout: 5000 // 5秒超时
+        timeout: 2000 // 2秒超时
       });
 
       if (backupResponse.data && backupResponse.data.code === 200 && backupResponse.data.data && backupResponse.data.data.province) {

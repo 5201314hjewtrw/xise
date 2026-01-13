@@ -575,14 +575,6 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    // 获取用户IP属地
-    const userIP = getRealIP(req);
-    let ipLocation;
-    try {
-      ipLocation = await getIPLocation(userIP);
-    } catch (error) {
-      ipLocation = '未知';
-    }
     // 获取用户User-Agent
     const userAgent = req.headers['user-agent'] || '';
     // 默认头像使用空字符串，前端会使用本地默认头像
@@ -590,6 +582,7 @@ router.post('/register', async (req, res) => {
 
     // 插入新用户（密码使用SHA2哈希加密）
     // 邮件功能未启用时，email字段存储空字符串
+    // 注意：IP属地获取改为异步，不阻塞注册流程
     const userEmail = isEmailEnabled ? email : '';
     const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
     const newUser = await prisma.user.create({
@@ -600,9 +593,20 @@ router.post('/register', async (req, res) => {
         email: userEmail,
         avatar: defaultAvatar,
         bio: '',
-        location: ipLocation
+        location: '未知'
       }
     });
+
+    // 异步更新IP属地（不阻塞注册响应）
+    const userIP = getRealIP(req);
+    getIPLocation(userIP).then(ipLocation => {
+      if (ipLocation && ipLocation !== '未知') {
+        prisma.user.update({
+          where: { id: newUser.id },
+          data: { location: ipLocation }
+        }).catch(err => console.error('更新IP属地失败:', err.message));
+      }
+    }).catch(err => console.error('获取IP属地失败:', err.message));
 
     const userId = newUser.id;
 
@@ -622,11 +626,18 @@ router.post('/register', async (req, res) => {
       }
     });
 
-    // 获取完整用户信息
-    const userInfo = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, user_id: true, nickname: true, avatar: true, bio: true, location: true, follow_count: true, fans_count: true, like_count: true }
-    });
+    // 使用创建时返回的用户数据，避免额外的数据库查询
+    const userInfo = {
+      id: Number(newUser.id),
+      user_id: newUser.user_id,
+      nickname: newUser.nickname,
+      avatar: newUser.avatar,
+      bio: newUser.bio,
+      location: newUser.location,
+      follow_count: 0,
+      fans_count: 0,
+      like_count: 0
+    };
 
     console.log(`用户注册成功 - 用户ID: ${userId}, 汐社号: ${userInfo.user_id}`);
 
@@ -634,7 +645,7 @@ router.post('/register', async (req, res) => {
       code: RESPONSE_CODES.SUCCESS,
       message: '注册成功',
       data: {
-        user: { ...userInfo, id: Number(userInfo.id) },
+        user: userInfo,
         tokens: {
           access_token: accessToken,
           refresh_token: refreshToken,
