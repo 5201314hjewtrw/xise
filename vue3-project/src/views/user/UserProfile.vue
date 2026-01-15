@@ -255,9 +255,19 @@ onMounted(async () => {
   <div class="content-container">
 
     <div class="user-info" v-if="userInfo.nickname">
+      <!-- 背景图和头像区域 -->
+      <div class="cover-avatar-section">
+        <div class="cover-image-wrapper">
+          <img v-if="userInfo.cover_image" :src="userInfo.cover_image" alt="背景图" class="cover-image" />
+          <div v-else class="cover-placeholder"></div>
+        </div>
+        <div class="avatar-on-cover">
+          <img :src="userInfo.avatar || defaultAvatar" :alt="userInfo.nickname || '用户头像'" class="avatar"
+            @click="previewAvatar" @error="handleAvatarError">
+        </div>
+      </div>
+      
       <div class="basic-info">
-        <img :src="userInfo.avatar || defaultAvatar" :alt="userInfo.nickname || '用户头像'" class="avatar"
-          @click="previewAvatar" @error="handleAvatarError">
         <div class="user-basic">
           <div class="user-nickname">
             <span>{{ userInfo?.nickname || '用户' }}</span>
@@ -389,7 +399,7 @@ onMounted(async () => {
 .user-info {
   height: auto;
   min-height: 196px;
-  padding: 16px 0;
+  padding: 0 0 16px 0;
   width: 100%;
   max-width: 1200px;
   overflow-x: hidden;
@@ -397,14 +407,55 @@ onMounted(async () => {
   transition: background-color 0.2s ease;
 }
 
+/* 背景图和头像区域 */
+.cover-avatar-section {
+  position: relative;
+  width: 100%;
+  margin-bottom: 56px;
+}
+
+.cover-image-wrapper {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+}
+
+.cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--bg-color-secondary) 0%, var(--bg-color-tertiary) 100%);
+}
+
+.avatar-on-cover {
+  position: absolute;
+  bottom: -48px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.avatar-on-cover .avatar {
+  width: 96px;
+  height: 96px;
+  border: 4px solid var(--bg-color-primary);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
 .basic-info {
   display: flex;
   flex-direction: row;
   align-items: center;
-  height: 72px;
   width: 100%;
   padding: 0 16px;
   position: relative;
+  justify-content: center;
 }
 
 .avatar {
@@ -419,8 +470,9 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   flex: 1;
-  margin-left: 16px;
   gap: 6px;
+  align-items: center;
+  text-align: center;
 }
 
 
@@ -491,10 +543,11 @@ onMounted(async () => {
 }
 
 .user-desc {
-  margin: 17px 0px 0px;
+  margin: 12px 0px 0px;
   color: var(--text-color-primary);
   font-size: 14px;
   padding: 0 16px;
+  text-align: center;
 }
 
 .user-interactions {
@@ -502,6 +555,7 @@ onMounted(async () => {
   padding: 0 16px;
   flex-wrap: wrap;
   width: 100%;
+  justify-content: center;
 }
 
 .user-interactions div {
@@ -548,8 +602,7 @@ onMounted(async () => {
 .follow-button-wrapper {
   position: absolute;
   right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 16px;
 }
 
 /* ---------- 3.6. 加载和错误状态样式 ---------- */

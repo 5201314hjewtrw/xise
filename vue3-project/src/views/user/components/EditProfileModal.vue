@@ -10,21 +10,45 @@
       <div class="modal-body">
         <form @submit.prevent="handleSave">
 
-          <div class="form-group">
-            <label class="form-label">头像:</label>
-            <div class="avatar-upload-container">
-              <div class="avatar-upload-area" @click="triggerFileInput" @dragover.prevent @drop.prevent="handleDrop">
-                <div v-if="!uploading" class="avatar-preview">
-                  <img :src="form.avatar" alt="头像" class="avatar-image" />
-                  <SvgIcon class="overlay-icon" name="edit" width="30" height="30" />
+          <!-- 背景图和头像区域 -->
+          <div class="form-group cover-avatar-group">
+            <label class="form-label">背景图与头像:</label>
+            <div class="cover-avatar-container">
+              <!-- 背景图区域 -->
+              <div class="cover-upload-area" @click="triggerCoverFileInput" @dragover.prevent @drop.prevent="handleCoverDrop">
+                <div v-if="!coverUploading" class="cover-preview">
+                  <img v-if="form.cover_image" :src="form.cover_image" alt="背景图" class="cover-image" />
+                  <div v-else class="cover-placeholder">
+                    <SvgIcon name="image" width="24" height="24" />
+                    <span>点击添加背景图</span>
+                  </div>
+                  <div class="cover-overlay">
+                    <SvgIcon class="overlay-icon" name="edit" width="20" height="20" />
+                    <span>更换背景图</span>
+                  </div>
                 </div>
-                <div v-else class="upload-loading">
+                <div v-else class="upload-loading cover-loading">
                   <div class="loading-spinner"></div>
                   <span class="loading-text">上传中...</span>
                 </div>
               </div>
-              <input ref="fileInput" type="file" accept="image/*" @change="handleFileSelect" style="display: none;" />
+              <input ref="coverFileInput" type="file" accept="image/*" @change="handleCoverFileSelect" style="display: none;" />
+              
+              <!-- 头像区域（叠加在背景图上） -->
+              <div class="avatar-on-cover">
+                <div class="avatar-upload-area" @click="triggerFileInput" @dragover.prevent @drop.prevent="handleDrop">
+                  <div v-if="!uploading" class="avatar-preview">
+                    <img :src="form.avatar" alt="头像" class="avatar-image" />
+                    <SvgIcon class="overlay-icon" name="edit" width="24" height="24" />
+                  </div>
+                  <div v-else class="upload-loading">
+                    <div class="loading-spinner"></div>
+                    <span class="loading-text">上传中...</span>
+                  </div>
+                </div>
+              </div>
             </div>
+            <input ref="fileInput" type="file" accept="image/*" @change="handleFileSelect" style="display: none;" />
           </div>
 
 
@@ -144,6 +168,9 @@
   <CropModal :visible="showCropModal" :image-src="cropImageSrc" :uploading="uploading" @close="closeCropModal"
     @confirm="handleCropConfirm" />
 
+  <CoverCropModal :visible="showCoverCropModal" :image-src="coverCropImageSrc" :uploading="coverUploading" @close="closeCoverCropModal"
+    @confirm="handleCoverCropConfirm" />
+
 
   <div v-if="showEmojiPanel" class="emoji-panel-overlay" v-click-outside.mousedown="closeEmojiPanel"
     v-escape-key="closeEmojiPanel">
@@ -173,6 +200,7 @@ import MbtiPicker from '@/components/MbtiPicker.vue'
 import MentionModal from '@/components/mention/MentionModal.vue'
 import ContentEditableInput from '@/components/ContentEditableInput.vue'
 import CropModal from './CropModal.vue'
+import CoverCropModal from './CoverCropModal.vue'
 import { useScrollLock } from '@/composables/useScrollLock'
 import { sanitizeContent } from '@/utils/contentSecurity'
 import { useUserStore } from '@/stores/user.js'
@@ -313,6 +341,7 @@ onMounted(() => {
 // 表单数据
 const form = reactive({
   avatar: '',
+  cover_image: '',
   nickname: '',
   bio: '',
 
@@ -320,7 +349,8 @@ const form = reactive({
   zodiac_sign: '',
   mbti: '',
   interests: [],
-  avatarBlob: null // 存储裁剪后的图片blob
+  avatarBlob: null, // 存储裁剪后的头像blob
+  coverImageBlob: null // 存储裁剪后的背景图blob
 })
 
 // 兴趣爱好相关
@@ -340,6 +370,12 @@ const fileInput = ref(null)
 const uploading = ref(false)
 const avatarError = ref('')
 const saving = ref(false)
+
+// 背景图上传相关
+const coverFileInput = ref(null)
+const coverUploading = ref(false)
+const showCoverCropModal = ref(false)
+const coverCropImageSrc = ref('')
 
 // 选项数据
 const genderOptions = [
@@ -425,6 +461,7 @@ watch(() => props.visible, (newValue) => {
     // 检查头像URL是否有效（排除错误的默认头像路径）
     const isValidAvatar = props.userInfo.avatar && !props.userInfo.avatar.includes('/asset/imgs/avatar.png')
     form.avatar = isValidAvatar ? props.userInfo.avatar : defaultAvatar
+    form.cover_image = props.userInfo.cover_image || ''
     form.nickname = props.userInfo.nickname || ''
     form.bio = props.userInfo.bio || ''
 
@@ -454,6 +491,7 @@ watch(() => props.visible, (newValue) => {
 
     avatarError.value = ''
     newInterest.value = ''
+    form.coverImageBlob = null
   } else {
     // 解锁滚动
     unlock()
@@ -578,6 +616,68 @@ const handleCropConfirm = async (blob) => {
   } catch (error) {
     console.error('处理图片失败:', error)
     avatarError.value = '处理图片失败，请重试'
+  }
+}
+
+// 背景图上传相关方法
+const triggerCoverFileInput = () => {
+  coverFileInput.value?.click()
+}
+
+const handleCoverFileSelect = (event) => {
+  const file = event.target.files[0]
+  if (file) {
+    showCoverCropDialog(file)
+  }
+}
+
+const handleCoverDrop = (event) => {
+  event.preventDefault()
+  const files = event.dataTransfer.files
+  if (files.length > 0) {
+    showCoverCropDialog(files[0])
+  }
+}
+
+const showCoverCropDialog = async (file) => {
+  if (!validateFile(file)) {
+    return
+  }
+
+  try {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      coverCropImageSrc.value = e.target.result
+      showCoverCropModal.value = true
+    }
+    reader.readAsDataURL(file)
+  } catch (error) {
+    console.error('文件读取失败:', error)
+    $message.error('文件读取失败，请重试')
+  }
+}
+
+const closeCoverCropModal = () => {
+  showCoverCropModal.value = false
+  coverCropImageSrc.value = ''
+  if (coverFileInput.value) {
+    coverFileInput.value.value = ''
+  }
+}
+
+const handleCoverCropConfirm = async (blob) => {
+  try {
+    // 将裁剪后的图片转换为base64，暂存在form中
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      form.cover_image = e.target.result
+      form.coverImageBlob = blob // 保存blob用于后续上传
+      closeCoverCropModal()
+    }
+    reader.readAsDataURL(blob)
+  } catch (error) {
+    console.error('处理背景图失败:', error)
+    $message.error('处理背景图失败，请重试')
   }
 }
 
@@ -729,7 +829,10 @@ const handleSave = async () => {
     const formData = { ...form }
     formData.bio = sanitizedBio
     delete formData.avatarBlob
+    delete formData.coverImageBlob
     delete formData.location
+    
+    // 上传头像
     if (form.avatarBlob) {
       uploading.value = true
 
@@ -752,6 +855,32 @@ const handleSave = async () => {
         return
       } finally {
         uploading.value = false
+      }
+    }
+    
+    // 上传背景图
+    if (form.coverImageBlob) {
+      coverUploading.value = true
+
+      try {
+        const result = await imageUploadApi.uploadCroppedImage(form.coverImageBlob, {
+          filename: 'cover_image.jpg'
+        })
+
+        if (result.success) {
+          formData.cover_image = result.data.url
+          console.log('背景图上传成功:', result.data.url)
+        } else {
+          console.error('背景图上传失败:', result.message)
+          $message.error(result.message || '背景图上传失败，请重试')
+          return
+        }
+      } catch (error) {
+        console.error('背景图上传异常:', error)
+        $message.error('背景图上传失败，请重试')
+        return
+      } finally {
+        coverUploading.value = false
       }
     }
 
@@ -1114,6 +1243,113 @@ const handleSave = async () => {
   text-align: right;
 }
 
+/* 背景图和头像组合区域 */
+.cover-avatar-group {
+  margin-bottom: 24px;
+}
+
+.cover-avatar-container {
+  position: relative;
+  width: 100%;
+}
+
+/* 背景图上传样式 */
+.cover-upload-area {
+  position: relative;
+  width: 100%;
+  height: 135px;
+  border: 2px dashed var(--border-color-primary);
+  border-radius: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.2s;
+  background: var(--bg-color-secondary);
+}
+
+.cover-upload-area:hover {
+  border-color: var(--primary-color);
+}
+
+.cover-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: all 0.3s ease;
+}
+
+.cover-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-color-secondary);
+  gap: 8px;
+}
+
+.cover-placeholder span {
+  font-size: 14px;
+}
+
+.cover-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: all 0.3s ease;
+  color: white;
+  gap: 4px;
+}
+
+.cover-overlay span {
+  font-size: 14px;
+}
+
+.cover-upload-area:hover .cover-overlay {
+  opacity: 1;
+}
+
+.cover-upload-area:hover .cover-image {
+  filter: brightness(0.7);
+}
+
+.cover-loading {
+  height: 135px;
+}
+
+/* 头像叠加在背景图上 */
+.avatar-on-cover {
+  position: absolute;
+  bottom: -36px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.avatar-on-cover .avatar-upload-area {
+  width: 80px;
+  height: 80px;
+  border: 3px solid var(--bg-color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.avatar-on-cover .overlay-icon {
+  width: 20px;
+  height: 20px;
+}
 
 /* 头像上传样式 */
 .avatar-upload-container {
@@ -1131,6 +1367,7 @@ const handleSave = async () => {
   cursor: pointer;
   overflow: hidden;
   transition: border-color 0.2s;
+  background: var(--bg-color-primary);
 }
 
 .avatar-upload-area:hover {
