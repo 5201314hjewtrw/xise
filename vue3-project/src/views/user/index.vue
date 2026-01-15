@@ -24,6 +24,29 @@ const userStore = useUserStore()
 
 const defaultAvatar = new URL('@/assets/imgs/avatar.png', import.meta.url).href
 
+// 默认背景图 - 使用渐变色作为默认背景
+const defaultBackground = ''
+
+// 背景图菜单
+const showBackgroundMenu = ref(false)
+const backgroundMenuRef = ref(null)
+
+// 点击背景图显示菜单
+const handleBackgroundClick = () => {
+  showBackgroundMenu.value = !showBackgroundMenu.value
+}
+
+// 关闭背景图菜单
+const closeBackgroundMenu = () => {
+  showBackgroundMenu.value = false
+}
+
+// 更换背景图 - 打开编辑资料模态框
+const changeBackground = () => {
+  closeBackgroundMenu()
+  openEditProfileModal()
+}
+
 // 用户统计信息
 const userStats = ref({
   follow_count: 0,
@@ -332,10 +355,28 @@ function handleCollect(data) {
 </script>
 <template>
   <div class="content-container">
-    <div class="user-info" v-if="userStore.isLoggedIn">
+    <div class="user-info" v-if="userStore.isLoggedIn" @click.self="handleBackgroundClick">
+      <!-- 背景图 - 覆盖整个用户信息区域 -->
+      <div class="background-image-container" @click="handleBackgroundClick">
+        <img 
+          v-if="userStore.userInfo?.background" 
+          :src="userStore.userInfo.background" 
+          alt="背景图" 
+          class="background-image"
+        />
+        <div v-else class="background-placeholder"></div>
+        <div class="background-overlay"></div>
+      </div>
+      <!-- 背景图菜单 -->
+      <div v-if="showBackgroundMenu" class="background-menu" ref="backgroundMenuRef" v-click-outside.mousedown="closeBackgroundMenu">
+        <div class="background-menu-item" @click="changeBackground">
+          <SvgIcon name="edit" width="16" height="16" />
+          <span>更换背景图</span>
+        </div>
+      </div>
       <div class="basic-info">
         <img :src="userStore.userInfo?.avatar || defaultAvatar" :alt="userStore.userInfo?.nickname || '用户头像'"
-          class="avatar" @click="previewAvatar" @error="handleAvatarError">
+          class="avatar" @click.stop="previewAvatar" @error="handleAvatarError">
         <div class="user-basic">
           <div class="user-nickname">
             <span>{{ userStore.userInfo?.nickname || '用户' }}</span>
@@ -347,7 +388,7 @@ function handleCollect(data) {
           </div>
         </div>
         <div class="edit-profile-button-wrapper">
-          <button class="edit-profile-btn" @click="openEditProfileModal">
+          <button class="edit-profile-btn" @click.stop="openEditProfileModal">
             编辑资料
           </button>
         </div>
@@ -517,11 +558,82 @@ function handleCollect(data) {
   height: auto;
   min-height: 196px;
   padding: 16px 0;
+  padding-top: 88px; /* 为导航栏留出空间 */
+  margin-top: -72px; /* 延伸到导航栏区域 */
   width: 100%;
   max-width: 1200px;
-  overflow-x: hidden;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  border-radius: 0 0 12px 12px; /* 只有底部圆角 */
+  margin-left: 16px;
+  margin-right: 16px;
+  max-width: calc(100% - 32px);
+}
+
+/* 背景图容器 - 覆盖整个用户信息区域 */
+.background-image-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 0 0 12px 12px; /* 只有底部圆角 */
+}
+
+.background-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.background-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--bg-color-secondary) 0%, var(--bg-color-tertiary) 100%);
+}
+
+.background-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.6) 100%);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+/* 背景图菜单 */
+.background-menu {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   background: var(--bg-color-primary);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  overflow: hidden;
+  min-width: 140px;
+}
+
+.background-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  color: var(--text-color-primary);
+  font-size: 14px;
+  cursor: pointer;
   transition: background-color 0.2s ease;
+}
+
+.background-menu-item:hover {
+  background: var(--bg-color-secondary);
 }
 
 .basic-info {
@@ -532,14 +644,18 @@ function handleCollect(data) {
   width: 100%;
   padding: 0 16px;
   position: relative;
+  z-index: 1;
 }
 
 .avatar {
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  border: 1px solid var(--border-color-primary);
+  border: 3px solid rgba(255, 255, 255, 0.9);
   cursor: pointer;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .user-basic {
@@ -548,24 +664,28 @@ function handleCollect(data) {
   flex: 1;
   margin-left: 16px;
   gap: 6px;
+  position: relative;
+  z-index: 1;
 }
 
 .user-nickname {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-color-primary);
+  color: #ffffff;
   font-size: 18px;
   font-weight: bold;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .user-content {
   display: flex;
   flex-direction: column;
-  color: var(--text-color-quaternary);
+  color: rgba(255, 255, 255, 0.85);
   font-size: 12px;
   gap: 4px;
   max-width: 100%;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* 大屏幕下恢复横向布局 */
@@ -619,9 +739,12 @@ function handleCollect(data) {
 
 .user-desc {
   margin: 17px 0px 0px;
-  color: var(--text-color-primary);
+  color: #ffffff;
   font-size: 14px;
   padding: 0 16px;
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .user-interactions {
@@ -629,6 +752,8 @@ function handleCollect(data) {
   padding: 0 16px;
   flex-wrap: wrap;
   width: 100%;
+  position: relative;
+  z-index: 1;
 }
 
 .user-interactions div {
@@ -646,7 +771,7 @@ function handleCollect(data) {
 }
 
 .interaction-item:hover {
-  background-color: var(--bg-color-secondary);
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
 .interaction-item:last-child {
@@ -658,17 +783,36 @@ function handleCollect(data) {
 }
 
 .count {
-  color: var(--text-color-primary);
+  color: #ffffff;
   margin-right: 4px;
   font-size: 14px;
   text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .shows {
-  color: var(--text-color-quaternary);
+  color: rgba(255, 255, 255, 0.85);
   margin: 4px 0 0;
   font-size: 14px;
   text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* 用户信息区域内的个性标签样式覆盖 */
+.user-info :deep(.personality-tags) {
+  position: relative;
+  z-index: 1;
+}
+
+.user-info :deep(.tag) {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+.user-info :deep(.tag .gender-icon) {
+  color: #ffffff;
 }
 
 /* ---------- 3.5. 登录提示样式 ---------- */
@@ -828,11 +972,12 @@ function handleCollect(data) {
   right: 16px;
   top: 50%;
   transform: translateY(-50%);
+  z-index: 1;
 }
 
 .edit-profile-btn {
   padding: 3px 16px;
-  border: 1px solid var(--text-color-quaternary);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 20px;
   font-size: 14px;
   font-weight: bold;
@@ -842,14 +987,15 @@ function handleCollect(data) {
   text-align: center;
   transition: all 0.2s ease;
   user-select: none;
-  background: #aeadad0d;
-  color: var(--text-color-tertiary);
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  backdrop-filter: blur(4px);
 }
 
 .edit-profile-btn:hover {
-  background: #6e6e6e2c;
-  color: var(--text-color-secondary);
-  border-color: var(--text-color-tertiary);
+  background: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.8);
 }
 
 /* ---------- 7. 通用工具类 ---------- */
@@ -871,7 +1017,12 @@ function handleCollect(data) {
   }
 
   /* 内边距调整 */
-  .basic-info,
+  .basic-info {
+    padding: 0 16px;
+    margin: 0;
+    max-width: 100%;
+  }
+
   .user-desc,
   .user-interactions {
     padding: 0;
@@ -895,7 +1046,7 @@ function handleCollect(data) {
 
   /* 编辑资料按钮在大屏下的位置调整 */
   .edit-profile-button-wrapper {
-    right: 0;
+    right: 16px;
   }
 
 }

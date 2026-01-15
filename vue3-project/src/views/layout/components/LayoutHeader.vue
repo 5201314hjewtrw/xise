@@ -17,6 +17,11 @@ const logoUrl = new URL('@/assets/imgs/汐社.png', import.meta.url).href
 const isLargeScreen = ref(window.innerWidth > 695)
 const showSidebar = ref(window.innerWidth > 960)
 
+// 检查是否在用户页面（需要透明导航栏）
+const isUserPage = computed(() => {
+    return route.path === '/user' || route.name === 'user'
+})
+
 const showSearch = ref(false)
 const searchText = ref('')
 const showSearchDropdown = ref(false)
@@ -171,12 +176,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <header>
+    <header :class="{ 'transparent-header': isUserPage }">
         <div class="header-container">
             <template v-if="displaySearch">
-                <div v-if="isLargeScreen" class="logo" @click="router.push('/')">
-                    <img :src="logoUrl" alt="汐社" />
-                </div>
                 <div class="search-row" :class="{ 'large-screen': isLargeScreen, 'small-screen': !isLargeScreen }">
                     <div class="search-bar-container">
                         <div class="search-bar">
@@ -214,9 +216,6 @@ onUnmounted(() => {
             </template>
 
             <template v-else>
-                <div class="logo" @click="router.push('/')">
-                    <img :src="logoUrl" alt="汐社" />
-                </div>
                 <div class="header-right">
                     <div @click="openSearch" class="circle-btn">
                         <SvgIcon name="search" class="btn-icon" height="20" width="20" />
@@ -250,6 +249,11 @@ header {
     transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
+/* 用户页面透明导航栏 */
+header.transparent-header {
+    background: transparent;
+}
+
 .header-container {
     max-width: 1500px;
     margin: 0 auto;
@@ -262,25 +266,10 @@ header {
     width: 100%;
 }
 
-.logo {
-    width: 68.32px;
-    height: 32px;
-    color: var(--button-text-color);
-    background: var(--primary-color);
-    border-radius: 999px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-img {
-    width: 68.32px;
-    height: 32px;
-}
-
 .header-right {
     display: flex;
     align-items: center;
+    margin-left: auto;
 }
 
 /* 按钮基础样式 */
