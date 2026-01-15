@@ -30,6 +30,10 @@ import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import SvgIcon from '@/components/SvgIcon.vue'
 
+// 背景图裁切输出尺寸常量（16:9比例）
+const COVER_WIDTH = 1200
+const COVER_HEIGHT = 675
+
 export default {
   name: 'CoverCropModal',
   components: {
@@ -105,8 +109,8 @@ export default {
     const handleConfirm = () => {
       if (cropper) {
         const canvas = cropper.getCroppedCanvas({
-          width: 1200,
-          height: 675, // 16:9 比例
+          width: COVER_WIDTH,
+          height: COVER_HEIGHT,
           imageSmoothingEnabled: true,
           imageSmoothingQuality: 'high'
         })

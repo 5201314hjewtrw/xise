@@ -492,9 +492,13 @@ watch(() => props.visible, (newValue) => {
     avatarError.value = ''
     newInterest.value = ''
     form.coverImageBlob = null
+    form.avatarBlob = null
   } else {
     // 解锁滚动
     unlock()
+    // 清理blob引用防止内存泄漏
+    form.avatarBlob = null
+    form.coverImageBlob = null
   }
 })
 
