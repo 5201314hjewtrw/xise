@@ -1,17 +1,15 @@
 <template>
   <div class="publish-container">
+    <!-- 新布局：顶部导航栏 -->
     <div class="publish-header">
-      <div class="header-left">
-        <h1 class="page-title">发布笔记</h1>
-      </div>
-      <div class="header-right">
-        <button class="draft-box-btn" @click="goToDraftBox">
-          <SvgIcon name="draft" width="20" height="20" color="white" />
-          <span>草稿箱</span>
+      <div class="header-back" @click="handleBack">←</div>
+      <div class="header-title">发布笔记</div>
+      <div class="header-actions">
+        <button class="header-action-btn" @click="goToDraftBox" title="草稿箱">
+          <SvgIcon name="draft" width="20" height="20" />
         </button>
-        <button class="manage-btn" @click="goToPostManagement">
+        <button class="header-action-btn" @click="goToPostManagement" title="笔记管理">
           <SvgIcon name="post" width="20" height="20" />
-          <span>笔记管理</span>
         </button>
       </div>
     </div>
@@ -27,7 +25,8 @@
       </div>
 
       <form v-if="isLoggedIn" @submit.prevent="handlePublish" class="publish-form">
-        <div class="upload-section">
+        <!-- 媒体上传区域 -->
+        <div class="media-section">
           <!-- Tab选项 -->
           <div class="upload-tabs">
             <button 
@@ -48,8 +47,8 @@
             </button>
           </div>
 
-          <!-- 上传组件 -->
-          <div class="upload-content">
+          <!-- 媒体预览区域 -->
+          <div class="media-area">
             <MultiImageUpload 
               v-if="uploadType === 'image'"
               ref="multiImageUploadRef" 
@@ -75,16 +74,19 @@
           </div>
         </div>
 
-        <div class="input-section">
-          <input v-model="form.title" type="text" class="title-input" placeholder="请输入标题" maxlength="100"
+        <!-- 标题输入 -->
+        <div class="input-section title-section">
+          <input v-model="form.title" type="text" class="title-input" placeholder="添加标题" maxlength="100"
             @input="validateForm" />
-          <div class="char-count">{{ form.title.length }}/100</div>
         </div>
 
-        <div class="input-section">
+        <!-- 内容输入 -->
+        <div class="input-section content-section">
           <div class="content-input-wrapper">
             <ContentEditableInput ref="contentTextarea" v-model="form.content" :input-class="'content-textarea'"
-              placeholder="请输入内容" :enable-mention="true" :mention-users="mentionUsers" @focus="handleContentFocus"
+              placeholder="分享你的生活、穿搭、好物、使用心得...
+
+越真实越打动人～" :enable-mention="true" :mention-users="mentionUsers" @focus="handleContentFocus"
               @blur="handleContentBlur" @keydown="handleInputKeydown" @mention="handleMentionInput" />
             <div class="content-actions">
               <button type="button" class="mention-btn" @click="toggleMentionPanel">
@@ -98,8 +100,6 @@
               </button>
             </div>
           </div>
-          <div class="char-count">{{ form.content.length }}/2000</div>
-
           <!-- 附件预览 -->
           <div v-if="form.attachment" class="attachment-preview">
             <div class="attachment-info">
@@ -112,25 +112,6 @@
             </button>
           </div>
 
-          <!-- 付费设置按钮 -->
-          <div class="payment-settings-section">
-            <button type="button" class="payment-settings-btn" :class="{ active: form.paymentSettings.enabled }" @click="openPaymentModal">
-              <span class="payment-icon">🍒</span>
-              <span class="payment-text">
-                <template v-if="form.paymentSettings.enabled">
-                  已设置付费：{{ form.paymentSettings.price }} 石榴点
-                </template>
-                <template v-else>
-                  设置付费内容
-                </template>
-              </span>
-              <SvgIcon name="right" width="16" height="16" class="payment-arrow" />
-            </button>
-          </div>
-
-          <!-- 可见性设置 -->
-          <VisibilitySelector v-model="form.visibility" />
-
           <div v-if="showEmojiPanel" class="emoji-panel-overlay" v-click-outside="closeEmojiPanel">
             <div class="emoji-panel" @click.stop>
               <EmojiPicker @select="handleEmojiSelect" />
@@ -140,26 +121,54 @@
           <MentionModal :visible="showMentionPanel" @close="closeMentionPanel" @select="handleMentionSelect" />
         </div>
 
-        <div class="category-section">
-          <div class="section-title">分类</div>
-          <DropdownSelect v-model="form.category_id" :options="categories" placeholder="请选择分类" label-key="name"
-            value-key="id" max-width="300px" min-width="200px" @change="handleCategoryChange" />
-        </div>
-
-        <div class="tag-section">
-          <div class="section-title">标签 (最多10个)</div>
+        <!-- 标签区域 -->
+        <div class="tags-section">
           <TagSelector v-model="form.tags" :max-tags="10" />
         </div>
-      </form>
 
-      <div v-if="isLoggedIn" class="publish-actions">
-        <button class="draft-btn" :disabled="!canSaveDraft || isSavingDraft" @click="handleSaveDraft">
-          {{ isSavingDraft ? '保存中...' : '存草稿' }}
-        </button>
-        <button class="publish-btn" :disabled="!canPublish || isPublishing" @click="handlePublish">
-          {{ isPublishing ? '发布中...' : '发布' }}
-        </button>
-      </div>
+        <!-- 选项列表区域 -->
+        <div class="options-section">
+          <!-- 分类选项 -->
+          <div class="option-item" @click="showCategoryDropdown = !showCategoryDropdown">
+            <span class="option-label"># 分类</span>
+            <div class="option-value">
+              <span v-if="selectedCategoryName">{{ selectedCategoryName }}</span>
+              <span v-else class="placeholder">请选择</span>
+              <span class="arrow">›</span>
+            </div>
+          </div>
+          <div v-if="showCategoryDropdown" class="category-dropdown">
+            <DropdownSelect v-model="form.category_id" :options="categories" placeholder="请选择分类" label-key="name"
+              value-key="id" max-width="100%" min-width="100%" @change="handleCategoryChange" />
+          </div>
+
+          <!-- 付费设置选项 -->
+          <div class="option-item" @click="openPaymentModal">
+            <span class="option-label">🍒 付费设置</span>
+            <div class="option-value">
+              <span v-if="form.paymentSettings.enabled" class="active-text">{{ form.paymentSettings.price }} 石榴点</span>
+              <span v-else class="placeholder">未设置</span>
+              <span class="arrow">›</span>
+            </div>
+          </div>
+
+          <!-- 可见性设置选项 -->
+          <div class="option-item visibility-option">
+            <span class="option-label">👁 可见范围</span>
+            <VisibilitySelector v-model="form.visibility" />
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <div v-if="isLoggedIn" class="actions-bar">
+      <button class="btn btn-draft" :disabled="!canSaveDraft || isSavingDraft" @click="handleSaveDraft">
+        {{ isSavingDraft ? '保存中...' : '存草稿' }}
+      </button>
+      <button class="btn btn-publish" :disabled="!canPublish || isPublishing" @click="handlePublish">
+        {{ isPublishing ? '发布中...' : '发布笔记' }}
+      </button>
     </div>
 
     <MessageToast v-if="showToast" :message="toastMessage" :type="toastType" @close="handleToastClose" />
@@ -241,6 +250,7 @@ const showPaymentModal = ref(false)
 const showToast = ref(false)
 const toastMessage = ref('')
 const toastType = ref('success')
+const showCategoryDropdown = ref(false)
 
 const form = reactive({
   title: '',
@@ -312,6 +322,13 @@ const canSaveDraft = computed(() => {
 
 // 登录状态检查
 const isLoggedIn = computed(() => userStore.isLoggedIn)
+
+// 选中分类名称
+const selectedCategoryName = computed(() => {
+  if (!form.category_id || categories.value.length === 0) return ''
+  const category = categories.value.find(cat => cat.id === form.category_id)
+  return category ? category.name : ''
+})
 
 // 媒体数量计算
 const mediaCount = computed(() => {
@@ -1070,164 +1087,87 @@ const handleSaveDraft = async () => {
 </script>
 
 <style scoped>
+/* ===== 基础容器 ===== */
 .publish-container {
   min-height: 100vh;
   background: var(--bg-color-primary);
   color: var(--text-color-primary);
-  padding-bottom: calc(48px + constant(safe-area-inset-bottom));
-  padding-bottom: calc(48px + env(safe-area-inset-bottom));
-  margin: 72px auto;
-  min-width: 700px;
-  max-width: 700px;
+  padding-bottom: 80px; /* 给底部按钮留空间 */
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-left: 16px;
+  padding-right: 16px;
   transition: background-color 0.2s ease;
 }
 
+/* PC端适配 */
+@media (min-width: 768px) {
+  .publish-container {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+/* ===== 顶部导航栏 ===== */
 .publish-header {
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
-  background: var(--bg-color-primary);
-  border-bottom: 1px solid var(--border-color-primary);
+  color: var(--text-color-primary);
+  font-size: 18px;
+  margin: 12px 0;
   position: sticky;
   top: 0;
   z-index: 100;
-  transition: background-color 0.2s ease,border-color 0.2s ease;
+  background: var(--bg-color-primary);
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.draft-box-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
+.header-back {
+  font-size: 28px;
   cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  padding: 8px;
+  transition: opacity 0.2s;
 }
 
-.draft-box-btn:hover {
-  background: var(--primary-color-dark);
+.header-back:hover {
+  opacity: 0.7;
 }
 
-.manage-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.manage-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.page-title {
-  font-size: 1.2rem;
+.header-title {
+  font-size: 18px;
   font-weight: 600;
-  margin: 0;
-  color: var(--text-color-primary);
+  flex: 1;
+  text-align: center;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-}
-
-.draft-btn {
-  width: 20%;
-  padding: 12px;
-  background-color: var(--text-color-secondary);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 8px;
 }
 
-.draft-btn:hover:not(:disabled) {
-  background: var(--text-color-primary);
-}
-
-.draft-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.publish-btn {
-  width: 20%;
-  padding: 12px;
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
+.header-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-color-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.publish-btn:hover:not(:disabled) {
-  background: var(--primary-color-dark);
+.header-action-btn:hover {
+  background: var(--bg-color-secondary);
 }
 
-.publish-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.loading-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
+/* ===== 内容区域 ===== */
 .publish-content {
-  padding: 1rem;
-  max-width: 600px;
-  margin: 0 auto;
+  padding: 0;
   background-color: var(--bg-color-primary);
   transition: background-color 0.2s ease;
 }
@@ -1235,16 +1175,17 @@ const handleSaveDraft = async () => {
 .publish-form {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0;
 }
 
-.upload-section {
-  margin-bottom: 0.5rem;
+/* ===== 媒体上传区域 ===== */
+.media-section {
+  margin-bottom: 24px;
 }
 
 .upload-tabs {
   display: flex;
-  margin-bottom: 1rem;
+  margin-bottom: 16px;
   border-bottom: 1px solid var(--border-color-primary);
 }
 
@@ -1270,82 +1211,114 @@ const handleSaveDraft = async () => {
   border-bottom-color: var(--primary-color);
 }
 
-.upload-content {
-  margin-bottom: 1rem;
+.media-area {
+  margin-bottom: 16px;
 }
 
-.image-upload-section {
-  margin-bottom: 0.5rem;
+.text-image-section {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-start;
 }
 
-.input-section {
-  position: relative;
+.text-image-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.text-image-btn:hover {
+  background: var(--primary-color-dark);
+}
+
+/* ===== 标题输入 ===== */
+.title-section {
+  margin-bottom: 16px;
 }
 
 .title-input {
   width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
+  font-size: 24px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
   color: var(--text-color-primary);
-  font-size: 16px;
-  font-weight: bold;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
+  padding: 10px 0 14px;
+  outline: none;
+  border-bottom: 1px solid var(--border-color-primary);
+  transition: border-color 0.2s ease;
 }
 
 .title-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
 }
 
 .title-input::placeholder {
-  color: var(--text-color-secondary);
+  color: var(--text-color-quaternary);
+}
+
+@media (min-width: 768px) {
+  .title-input {
+    font-size: 28px;
+    padding: 12px 0 16px;
+  }
+}
+
+/* ===== 内容输入 ===== */
+.content-section {
+  margin-bottom: 24px;
 }
 
 .content-input-wrapper {
   position: relative;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
-  transition: all 0.2s ease;
-}
-
-.content-input-wrapper:focus-within {
-  border-color: var(--primary-color);
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .content-textarea {
   width: 100%;
-  padding: 1rem;
-  padding-bottom: 3rem;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-color-primary);
   font-size: 16px;
-  line-height: 1.5;
-  transition: all 0.2s ease;
-  min-height: 120px;
-  box-sizing: border-box;
-  caret-color: var(--primary-color);
-}
-
-.content-textarea:focus {
+  line-height: 1.6;
+  min-height: 160px;
+  background: transparent;
+  border: none;
+  color: var(--text-color-secondary);
+  resize: vertical;
   outline: none;
+  padding: 0;
+  padding-bottom: 48px;
+  caret-color: var(--primary-color);
 }
 
 .content-textarea:empty:before {
   content: attr(placeholder);
-  color: var(--text-color-secondary);
+  color: var(--text-color-quaternary);
   pointer-events: none;
+  white-space: pre-wrap;
+}
+
+@media (min-width: 768px) {
+  .content-textarea {
+    font-size: 18px;
+    line-height: 1.7;
+    min-height: 180px;
+  }
 }
 
 .content-actions {
   position: absolute;
-  bottom: 0.5rem;
-  left: 1rem;
+  bottom: 8px;
+  left: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1361,7 +1334,7 @@ const handleSaveDraft = async () => {
   height: 32px;
   border: none;
   background: transparent;
-  color: var(--text-color-secondary);
+  color: var(--text-color-tertiary);
   border-radius: 50%;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1374,22 +1347,15 @@ const handleSaveDraft = async () => {
   color: var(--text-color-primary);
 }
 
-.emoji-icon,
-.mention-icon,
-.attachment-icon {
-  width: 20px;
-  height: 20px;
-}
-
-/* 附件预览样式 */
+/* ===== 附件预览 ===== */
 .attachment-preview {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  margin-top: 8px;
+  padding: 10px 14px;
+  margin-top: 12px;
   background: var(--bg-color-secondary);
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border-color-primary);
 }
 
@@ -1435,55 +1401,164 @@ const handleSaveDraft = async () => {
   color: white;
 }
 
-/* 付费设置按钮样式 */
-.payment-settings-section {
-  margin-top: 12px;
+/* ===== 标签区域 ===== */
+.tags-section {
+  margin-bottom: 32px;
 }
 
-.payment-settings-btn {
+@media (min-width: 768px) {
+  .tags-section {
+    margin-bottom: 40px;
+  }
+}
+
+/* ===== 选项列表 ===== */
+.options-section {
+  margin-bottom: 24px;
+}
+
+.option-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border-color-primary);
+  font-size: 16px;
+  color: var(--text-color-primary);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.option-item:hover {
+  background: var(--bg-color-secondary);
+  margin: 0 -16px;
+  padding: 18px 16px;
+}
+
+@media (min-width: 768px) {
+  .option-item {
+    font-size: 17px;
+    padding: 20px 0;
+  }
+  
+  .option-item:hover {
+    margin: 0 -32px;
+    padding: 20px 32px;
+  }
+}
+
+.option-label {
+  font-weight: 500;
+}
+
+.option-value {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  padding: 12px 16px;
-  background: var(--bg-color-secondary);
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--text-color-secondary);
-}
-
-.payment-settings-btn:hover {
-  border-color: var(--primary-color);
-  background: var(--bg-color-primary);
-}
-
-.payment-settings-btn.active {
-  border-color: var(--primary-color);
-  background: rgba(var(--primary-color-rgb), 0.05);
-  color: var(--primary-color);
-}
-
-.payment-icon {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.payment-text {
-  flex: 1;
-  text-align: left;
-  font-size: 14px;
-}
-
-.payment-arrow {
   color: var(--text-color-tertiary);
 }
 
-.payment-settings-btn.active .payment-arrow {
+.option-value .placeholder {
+  color: var(--text-color-quaternary);
+}
+
+.option-value .active-text {
   color: var(--primary-color);
 }
 
+.arrow {
+  color: var(--text-color-quaternary);
+  font-size: 22px;
+  font-weight: 300;
+}
+
+.visibility-option {
+  cursor: default;
+}
+
+.visibility-option:hover {
+  background: transparent;
+  margin: 0;
+  padding: 18px 0;
+}
+
+@media (min-width: 768px) {
+  .visibility-option:hover {
+    padding: 20px 0;
+  }
+}
+
+.category-dropdown {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color-primary);
+}
+
+/* ===== 底部操作栏 ===== */
+.actions-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--bg-color-primary);
+  border-top: 1px solid var(--border-color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 0 20px;
+  z-index: 10;
+}
+
+@media (min-width: 768px) {
+  .actions-bar {
+    justify-content: flex-end;
+    padding: 0 40px;
+    max-width: 1080px;
+    margin: 0 auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+  }
+}
+
+.btn {
+  height: 46px;
+  line-height: 46px;
+  padding: 0 32px;
+  border-radius: 23px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-draft {
+  background: var(--bg-color-secondary);
+  color: var(--text-color-primary);
+  border: 1px solid var(--border-color-primary);
+}
+
+.btn-draft:hover:not(:disabled) {
+  background: var(--bg-color-tertiary);
+}
+
+.btn-publish {
+  background: linear-gradient(to right, #fe2c55, #ff385c);
+  color: white;
+}
+
+.btn-publish:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+/* ===== 表情面板 ===== */
 .emoji-panel-overlay {
   position: fixed;
   top: 0;
@@ -1509,13 +1584,8 @@ const handleSaveDraft = async () => {
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes scaleIn {
@@ -1523,293 +1593,13 @@ const handleSaveDraft = async () => {
     opacity: 0;
     transform: scale(0.8);
   }
-
   to {
     opacity: 1;
     transform: scale(1);
   }
 }
 
-.char-count {
-  position: absolute;
-  bottom: 0.5rem;
-  right: 0.75rem;
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  background: var(--bg-color-primary);
-  padding: 0.25rem;
-  transition: background-color 0.2s ease;
-}
-
-
-.section-title {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-color-primary);
-  margin-bottom: 0.75rem;
-}
-
-.tag-input-wrapper {
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
-  padding: 0.75rem;
-  transition: border-color 0.2s ease;
-}
-
-.tag-input-wrapper:focus-within {
-  border-color: var(--primary-color);
-}
-
-.selected-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.selected-tag {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.4rem 0.6rem;
-  background: var(--primary-color);
-  color: var(--button-text-color);
-  border-radius: 16px;
-  font-size: 0.8rem;
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.remove-tag-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: none;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.remove-tag-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: scale(1.1);
-}
-
-.tag-input-container {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.tag-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: var(--text-color-primary);
-  font-size: 0.9rem;
-  outline: none;
-  padding: 0.25rem 0;
-}
-
-.tag-input:disabled {
-  background-color: var(--disabled-bg);
-  cursor: not-allowed;
-}
-
-.tag-input::placeholder {
-  color: var(--text-color-secondary);
-}
-
-.add-tag-btn {
-  padding: 0.25rem 0.75rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.add-tag-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.tag-suggestions {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background: var(--bg-color-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color-primary);
-}
-
-.suggestions-title {
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.suggestions-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.tag-suggestion {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 16px;
-  background: var(--bg-color-primary);
-  color: var(--text-color-primary);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-suggestion:hover {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
-  color: white;
-}
-
-.recommended-tags {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background: var(--bg-color-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color-primary);
-}
-
-.recommendations-title {
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.tags-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.tag-item {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 16px;
-  background: var(--bg-color-primary);
-  color: var(--text-color-primary);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-item:hover {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
-  color: white;
-}
-
-.tag-item.active {
-  background: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
-}
-
-.category-section {
-  margin-bottom: 1rem;
-}
-
-
-
-.publish-actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
-  padding: 2rem 1rem;
-  margin-top: 2rem;
-  background: var(--bg-color-primary);
-}
-
-.publish-actions .cancel-btn {
-  padding: 0.75rem 1.5rem;
-  background: transparent;
-  color: var(--text-color-secondary);
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 100px;
-}
-
-
-
-.publish-actions .loading-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* 响应式设计 */
-@media (max-width: 960px) {
-  .publish-container {
-    min-width: 100%;
-    max-width: 100%;
-    margin: 72px 0;
-  }
-
-  .publish-header {
-    padding: 0.75rem 1rem;
-  }
-
-  .header-right {
-    gap: 0.5rem;
-  }
-
-  .draft-box-btn,
-  .manage-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .publish-content {
-    padding: 0.75rem;
-  }
-
-  .publish-actions {
-    padding: 1rem 0.75rem;
-  }
-}
-
-/* 登录提示样式 */
+/* ===== 登录提示 ===== */
 .login-prompt {
   display: flex;
   flex-direction: column;
@@ -1844,104 +1634,47 @@ const handleSaveDraft = async () => {
   line-height: 1.5;
 }
 
-.tag-input {
-  min-width: 80px;
-}
-
-.publish-actions {
-  padding: 1.5rem 0.75rem;
-  gap: 0.75rem;
-}
-
-.publish-actions .cancel-btn,
-.publish-actions .draft-btn,
-.publish-actions .publish-btn {
-  padding: 0.6rem 1.2rem;
-  font-size: 0.85rem;
-  min-width: 80px;
+/* ===== 响应式适配 ===== */
+@media (max-width: 768px) {
+  .publish-container {
+    padding-bottom: 80px;
+  }
+  
+  .header-title {
+    font-size: 16px;
+  }
+  
+  .btn {
+    padding: 0 24px;
+    font-size: 14px;
+  }
+  
+  .actions-bar {
+    gap: 16px;
+    padding: 0 16px;
+  }
 }
 
 @media (max-width: 480px) {
-  .publish-header {
-    padding: 16px 14px;
+  .title-input {
+    font-size: 20px;
   }
-
-  .page-title {
-    margin-left: 12px;
+  
+  .content-textarea {
+    font-size: 15px;
+    min-height: 120px;
   }
-
-  .header-actions {
-    gap: 0.5rem;
+  
+  .option-item {
+    padding: 14px 0;
+    font-size: 15px;
   }
-
-  .cancel-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
+  
+  .btn {
+    height: 40px;
+    line-height: 40px;
+    padding: 0 20px;
+    font-size: 14px;
   }
-
-  .draft-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .publish-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .publish-content {
-    padding: 1rem;
-  }
-
-
-  .tag-input {
-    min-width: 60px;
-    font-size: 0.85rem;
-  }
-
-  .publish-actions {
-    padding: 1rem 0.5rem;
-    gap: 0.5rem;
-    flex-direction: column;
-  }
-
-}
-
-.text-image-section {
-  margin-top: 0.75rem;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.text-image-btn {
-  display: flex;
-  align-items: center;
-  padding: 0.4rem;
-  background: var(--primary-color);
-  color: var(--button-text-color);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.text-image-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.text-image-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
-}
-
-.publish-actions .cancel-btn,
-.publish-actions .draft-btn,
-.publish-actions .publish-btn {
-  width: 100%;
-  padding: 0.75rem;
-  font-size: 0.9rem;
-  min-width: unset;
 }
 </style>
