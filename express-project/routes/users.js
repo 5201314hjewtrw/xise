@@ -321,7 +321,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
       user_id: user.user_id,
       nickname: user.nickname,
       avatar: user.avatar,
-      cover_image: user.cover_image,
+      cover_image: user.cover_image || null,
       bio: displayBio,
       bio_audit_status: isOwner ? bioAuditStatus : undefined, // 仅本人可见审核状态
       location: user.location,
