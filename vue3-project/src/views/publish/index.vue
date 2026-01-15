@@ -84,9 +84,7 @@
         <div class="input-section content-section">
           <div class="content-input-wrapper">
             <ContentEditableInput ref="contentTextarea" v-model="form.content" :input-class="'content-textarea'"
-              placeholder="分享你的生活、穿搭、好物、使用心得...
-
-越真实越打动人～" :enable-mention="true" :mention-users="mentionUsers" @focus="handleContentFocus"
+              placeholder="分享你的生活、穿搭、好物、使用心得...\n\n越真实越打动人～" :enable-mention="true" :mention-users="mentionUsers" @focus="handleContentFocus"
               @blur="handleContentBlur" @keydown="handleInputKeydown" @mention="handleMentionInput" />
             <div class="content-actions">
               <button type="button" class="mention-btn" @click="toggleMentionPanel">
@@ -129,7 +127,7 @@
         <!-- 选项列表区域 -->
         <div class="options-section">
           <!-- 分类选项 -->
-          <div class="option-item" @click="showCategoryDropdown = !showCategoryDropdown">
+          <div class="option-item" @click="toggleCategoryDropdown">
             <span class="option-label"># 分类</span>
             <div class="option-value">
               <span v-if="selectedCategoryName">{{ selectedCategoryName }}</span>
@@ -323,7 +321,11 @@ const canSaveDraft = computed(() => {
 // 登录状态检查
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
-// 选中分类名称
+/**
+ * Returns the name of the currently selected category.
+ * Used to display the selected category in the options list.
+ * @returns {string} The category name or empty string if none selected
+ */
 const selectedCategoryName = computed(() => {
   if (!form.category_id || categories.value.length === 0) return ''
   const category = categories.value.find(cat => cat.id === form.category_id)
@@ -552,6 +554,13 @@ const toggleEmojiPanel = () => {
 const closeEmojiPanel = () => {
   showEmojiPanel.value = false
   unlock()
+}
+
+/**
+ * Toggles the category dropdown visibility
+ */
+const toggleCategoryDropdown = () => {
+  showCategoryDropdown.value = !showCategoryDropdown.value
 }
 
 const toggleMentionPanel = () => {
