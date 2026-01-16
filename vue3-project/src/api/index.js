@@ -918,6 +918,11 @@ export const systemNotificationApi = {
     return request.get('/system-notifications/pending')
   },
 
+  // 获取未确认系统通知的数量
+  getPendingCount() {
+    return request.get('/system-notifications/pending-count')
+  },
+
   // 确认系统通知
   confirmNotification(notificationId) {
     return request.post(`/system-notifications/${notificationId}/confirm`)

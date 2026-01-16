@@ -28,6 +28,7 @@ const props = defineProps({
   unreadCounts: {
     type: Object,
     default: () => ({
+      system: 0,
       comments: 0,
       likes: 0,
       collections: 0,

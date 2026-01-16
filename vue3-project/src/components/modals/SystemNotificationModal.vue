@@ -85,7 +85,7 @@ const hasMoreNotifications = computed(() => {
 
 // 获取未确认的系统通知
 const fetchPendingNotifications = async () => {
-  if (!userStore.isLoggedIn) return
+  if (!userStore.isLoggedIn || isLoading.value) return
   
   isLoading.value = true
   try {
@@ -139,10 +139,13 @@ const handleImageError = (event) => {
 }
 
 // 监听登录状态变化
-watch(() => userStore.isLoggedIn, (newValue) => {
-  if (newValue) {
-    fetchPendingNotifications()
-  } else {
+watch(() => userStore.isLoggedIn, (newValue, oldValue) => {
+  // 只在从未登录变为已登录时获取通知
+  if (newValue && !oldValue) {
+    setTimeout(() => {
+      fetchPendingNotifications()
+    }, INIT_FETCH_DELAY_MS)
+  } else if (!newValue) {
     visible.value = false
     notifications.value = []
   }

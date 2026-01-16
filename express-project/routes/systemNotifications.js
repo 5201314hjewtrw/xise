@@ -69,6 +69,54 @@ router.get('/pending', authenticateToken, async (req, res) => {
   }
 });
 
+// 获取未确认系统通知的数量
+router.get('/pending-count', authenticateToken, async (req, res) => {
+  try {
+    const userId = BigInt(req.user.id);
+    const now = new Date();
+
+    // 计算未确认的系统通知数量
+    const count = await prisma.systemNotification.count({
+      where: {
+        is_active: true,
+        AND: [
+          {
+            OR: [
+              { start_time: null },
+              { start_time: { lte: now } }
+            ]
+          },
+          {
+            OR: [
+              { end_time: null },
+              { end_time: { gte: now } }
+            ]
+          }
+        ],
+        NOT: {
+          confirmations: {
+            some: {
+              user_id: userId
+            }
+          }
+        }
+      }
+    });
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: 'success',
+      data: { count }
+    });
+  } catch (error) {
+    console.error('获取系统通知数量失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ 
+      code: RESPONSE_CODES.ERROR, 
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR 
+    });
+  }
+});
+
 // 确认系统通知（用户点击确认后调用）
 router.post('/:id/confirm', authenticateToken, async (req, res) => {
   try {

@@ -963,9 +963,9 @@ const handlePopState = (event) => {
 // 组件挂载
 onMounted(async () => {
   scrollToTop()
-  // 获取按类型的未读通知数量
+  // 获取按类型的未读通知数量（包括系统消息）
   if (isLoggedIn.value) {
-    await notificationStore.fetchUnreadCountByType()
+    await notificationStore.fetchAllUnreadCounts()
   }
   await loadCurrentTabData()
   setupLazyLoading()
@@ -1238,7 +1238,7 @@ watch(isLoggedIn, async (newValue, oldValue) => {
   if (newValue && !oldValue) {
     // 用户刚登录，清除已加载标记并重新加载数据
     loadedTabs.value.clear()
-    await notificationStore.fetchUnreadCountByType()
+    await notificationStore.fetchAllUnreadCounts()
     await loadCurrentTabData()
     setupLazyLoading()
     nextTick(() => notificationTabRef.value?.updateSlider())
