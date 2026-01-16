@@ -106,7 +106,16 @@
 
       <!-- Notes preview section -->
       <div v-if="notePreviews.length > 0" class="form-section notes-preview-section">
-        <label class="form-label">笔记预览 ({{ notePreviews.length }}条)</label>
+        <div class="notes-preview-header">
+          <label class="form-label">笔记预览 ({{ notePreviews.length }}条)</label>
+          <div class="import-txt-wrapper">
+            <input type="file" ref="txtFileInput" accept=".txt" @change="handleTxtImport" style="display: none" />
+            <button class="btn btn-small" @click="$refs.txtFileInput.click()">
+              导入TXT文件
+            </button>
+            <span class="import-hint">（第1行标题，第2行内容，以此类推）</span>
+          </div>
+        </div>
         <div class="notes-list">
           <div v-for="(note, index) in notePreviews" :key="index" class="note-preview-item">
             <div class="note-header">
@@ -306,6 +315,50 @@ const generateNotes = () => {
   }
   
   notePreviews.value = notes
+}
+
+// Handle TXT file import for titles and content
+const txtFileInput = ref(null)
+const handleTxtImport = (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const text = e.target.result
+      const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+      
+      // Parse lines: odd lines (1, 3, 5...) are titles, even lines (2, 4, 6...) are content
+      // Line 1 = Title for note 1, Line 2 = Content for note 1
+      // Line 3 = Title for note 2, Line 4 = Content for note 2, etc.
+      for (let i = 0; i < notePreviews.value.length; i++) {
+        const titleIndex = i * 2
+        const contentIndex = i * 2 + 1
+        
+        if (titleIndex < lines.length) {
+          notePreviews.value[i].title = lines[titleIndex].trim()
+        }
+        if (contentIndex < lines.length) {
+          notePreviews.value[i].content = lines[contentIndex].trim()
+        }
+      }
+      
+      messageManager.success(`已导入 ${Math.min(Math.ceil(lines.length / 2), notePreviews.value.length)} 条笔记的标题和内容`)
+    } catch (error) {
+      console.error('解析TXT文件失败:', error)
+      messageManager.error('解析TXT文件失败，请检查文件格式')
+    }
+  }
+  
+  reader.onerror = () => {
+    messageManager.error('读取文件失败')
+  }
+  
+  reader.readAsText(file, 'UTF-8')
+  
+  // Reset file input so the same file can be selected again
+  event.target.value = ''
 }
 
 // Fetch server files
@@ -820,6 +873,30 @@ watch(() => formData.type, () => {
   margin-top: 24px;
   padding-top: 24px;
   border-top: 1px solid var(--border-color-primary);
+}
+
+.notes-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notes-preview-header .form-label {
+  margin-bottom: 0;
+}
+
+.import-txt-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-hint {
+  font-size: 12px;
+  color: var(--text-color-tertiary);
 }
 
 .notes-list {
