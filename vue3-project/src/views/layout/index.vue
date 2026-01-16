@@ -2,7 +2,7 @@
   <div class="layout-container">
     <Sidebar v-if="showSidebar" />
     <div class="main-content" :class="{ 'with-sidebar': showSidebar }">
-      <LayoutHeader />
+      <LayoutHeader v-if="!isPostDetailPage" />
       <div class="content-wrapper" :class="{ 'no-footer-padding': isPostDetailPage }">
         <router-view />
       </div>
