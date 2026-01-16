@@ -1163,11 +1163,12 @@ const postData = computed(() => {
 
 // 内容字符限制常量
 const CONTENT_CHAR_LIMIT = 200
+const PAID_CONTENT_CHAR_LIMIT = 50
 
 // 判断内容是否需要展开功能
 const shouldShowExpandButton = computed(() => {
   if (showPaymentOverlay.value) return false
-  const fullContent = postData.value.content
+  const fullContent = postData.value?.content
   return fullContent && fullContent.length > CONTENT_CHAR_LIMIT
 })
 
@@ -1178,11 +1179,11 @@ const toggleContentExpand = () => {
 
 // 付费内容时显示的截断内容
 const displayContent = computed(() => {
-  const fullContent = postData.value.content
+  const fullContent = postData.value?.content || ''
   // 付费内容只显示前50个字符
   if (showPaymentOverlay.value) {
-    if (fullContent.length > 50) {
-      return fullContent.substring(0, 50) + '...'
+    if (fullContent.length > PAID_CONTENT_CHAR_LIMIT) {
+      return fullContent.substring(0, PAID_CONTENT_CHAR_LIMIT) + '...'
     }
     return fullContent
   }
