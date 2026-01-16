@@ -128,16 +128,15 @@ onUnmounted(() => {
 
 <style scoped>
 .post-detail-page {
-  min-height: calc(100vh - 64px);
+  min-height: 100vh;
   margin: 10px;
   width: 100%;
   box-sizing: border-box;
   position: relative;
-  padding-top: 64px;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 64px 20px 20px 20px;
+  padding: 20px;
 }
 
 /* 中等屏幕适配 */
@@ -145,7 +144,6 @@ onUnmounted(() => {
   .post-detail-page {
     margin: 0;
     padding: 0;
-    padding-top: 64px;
     width: 100vw;
     max-width: 100vw;
   }
