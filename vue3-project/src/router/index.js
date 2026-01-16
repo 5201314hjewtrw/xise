@@ -23,7 +23,6 @@ import AdminMonitor from '@/views/admin/AdminMonitor.vue'
 import UserManagement from '@/views/admin/UserManagement.vue'
 import PostManagement from '@/views/admin/PostManagement.vue'
 import CommentManagement from '@/views/admin/CommentManagement.vue'
-import CategoryManagement from '@/views/admin/CategoryManagement.vue'
 import TagManagement from '@/views/admin/TagManagement.vue'
 import LikeManagement from '@/views/admin/LikeManagement.vue'
 import CollectionManagement from '@/views/admin/CollectionManagement.vue'
@@ -52,6 +51,11 @@ const router = createRouter({
             {
               path: '',
               name: 'recommend',
+              component: ChannelPage
+            },
+            {
+              path: '/explore/video',
+              name: 'video',
               component: ChannelPage
             },
             {
@@ -213,11 +217,6 @@ const router = createRouter({
           path: 'comments',
           name: 'admin_comments',
           component: CommentManagement
-        },
-        {
-          path: 'categories',
-          name: 'admin_categories',
-          component: CategoryManagement
         },
         {
           path: 'tags',

@@ -1,17 +1,29 @@
 <script setup>
 import WaterfallFlow from '@/components/WaterfallFlow.vue'
 import FloatingBtn from './FloatingBtn.vue'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 
 const props = defineProps({
     category: {
         type: [String, Number],
         default: 'general'
+    },
+    forceType: {
+        type: Number,
+        default: null
     }
 })
 
 const refreshKey = ref(0)
 const isImgOnly = ref(false)
+
+// 计算实际的type值：forceType优先，否则根据isImgOnly决定
+const effectiveType = computed(() => {
+    if (props.forceType !== null) {
+        return props.forceType
+    }
+    return isImgOnly.value ? 1 : null
+})
 
 function handleReload() {
     // 通知父组件显示加载动画
@@ -46,8 +58,8 @@ onUnmounted(() => {
 
 <template>
     <div class="explore-page">
-        <WaterfallFlow :refresh-key="refreshKey" :category="category" :type="isImgOnly ? 1 : null" />
-        <FloatingBtn @reload="handleReload" @toggle-img-only="handleToggleImgOnly" />
+        <WaterfallFlow :refresh-key="refreshKey" :category="category" :type="effectiveType" />
+        <FloatingBtn @reload="handleReload" @toggle-img-only="handleToggleImgOnly" :hideImgOnlyButton="forceType !== null" />
     </div>
 </template>
 

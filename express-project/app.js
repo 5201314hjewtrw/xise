@@ -55,7 +55,6 @@ const notificationsRoutes = require('./routes/notifications');
 const uploadRoutes = require('./routes/upload');
 const statsRoutes = require('./routes/stats');
 const adminRoutes = require('./routes/admin');
-const categoriesRoutes = require('./routes/categories');
 const balanceRoutes = require('./routes/balance');
 
 const app = express();
@@ -102,7 +101,6 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/categories', categoriesRoutes);
 app.use('/api/balance', balanceRoutes);
 
 // 错误处理中间件
