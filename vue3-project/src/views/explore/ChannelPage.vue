@@ -13,10 +13,11 @@ const channelType = computed(() => {
     return route.name || 'recommend'
 })
 
-// 频道配置映射（categories removed, only recommend is available）
+// 频道配置映射
 const channelConfig = computed(() => {
     return {
-        'recommend': { category: 'recommend', title: '推荐' }
+        'recommend': { category: 'recommend', title: '推荐', type: null },
+        'video': { category: 'recommend', title: '视频', type: 2 }
     }
 })
 
@@ -27,5 +28,5 @@ const currentChannel = computed(() => {
 </script>
 
 <template>
-    <ExplorePageTemplate :category="currentChannel.category" />
+    <ExplorePageTemplate :category="currentChannel.category" :forceType="currentChannel.type" />
 </template>

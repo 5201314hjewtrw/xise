@@ -33,9 +33,41 @@ const isExplorePage = computed(() => {
            route.path.startsWith('/explore/') || 
            route.name === 'explore' || 
            route.name === 'recommend' || 
+           route.name === 'video' ||
            route.name === 'following' ||
            route.name === 'channel'
 })
+
+// 检查是否在搜索结果页面
+const isSearchResultPage = computed(() => {
+    return route.path.startsWith('/search_result')
+})
+
+// 搜索结果页面的tabs
+const searchTabs = [
+    { id: 'all', label: '全部', path: '/all' },
+    { id: 'posts', label: '图文', path: '/posts' },
+    { id: 'videos', label: '视频', path: '/videos' },
+    { id: 'users', label: '用户', path: '/users' }
+]
+
+// 当前搜索tab
+const activeSearchTab = computed(() => {
+    return route.params.tab || 'all'
+})
+
+// 搜索tab切换处理
+function handleSearchTabChange(item) {
+    if (activeSearchTab.value === item.id) return
+    
+    navigationStore.scrollToTop('instant')
+    
+    router.push({
+        name: 'search_result_tab',
+        params: { tab: item.id },
+        query: route.query
+    })
+}
 
 const showSearch = ref(false)
 const searchText = ref('')
@@ -225,8 +257,18 @@ onUnmounted(() => {
                 />
             </div>
             
+            <!-- 居中显示的搜索结果标签 - 仅在搜索结果页面显示 -->
+            <div v-if="isSearchResultPage && isLargeScreen" class="channel-tabs-center">
+                <TabContainer 
+                    :tabs="searchTabs" 
+                    :activeTab="activeSearchTab" 
+                    :enableDrag="false"
+                    @tab-change="handleSearchTabChange" 
+                />
+            </div>
+            
             <template v-if="displaySearch">
-                <div class="search-row" :class="{ 'large-screen': isLargeScreen, 'small-screen': !isLargeScreen, 'with-channel-tabs': isExplorePage && isLargeScreen }">
+                <div class="search-row" :class="{ 'large-screen': isLargeScreen, 'small-screen': !isLargeScreen, 'with-channel-tabs': (isExplorePage || isSearchResultPage) && isLargeScreen }">
                     <div class="search-bar-container">
                         <div class="search-bar">
                             <input v-model="searchText" type="text" placeholder="搜索汐社" @keypress="handleKeyPress"
@@ -270,6 +312,15 @@ onUnmounted(() => {
                         :activeTab="channelStore.activeChannelId" 
                         :enableDrag="false"
                         @tab-change="handleTabChange" 
+                    />
+                </div>
+                <!-- 小屏幕下在搜索结果页面显示搜索标签 -->
+                <div v-else-if="isSearchResultPage" class="channel-tabs-mobile">
+                    <TabContainer 
+                        :tabs="searchTabs" 
+                        :activeTab="activeSearchTab" 
+                        :enableDrag="false"
+                        @tab-change="handleSearchTabChange" 
                     />
                 </div>
                 <div class="header-right">
