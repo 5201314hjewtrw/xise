@@ -3301,6 +3301,7 @@ router.get('/system-notifications', adminAuth, async (req, res) => {
       content: n.content,
       type: n.type,
       image_url: n.image_url,
+      images: n.image_url ? [n.image_url] : [], // 为MultiImageUpload组件提供images数组
       link_url: n.link_url,
       is_active: n.is_active,
       start_time: n.start_time,
@@ -3344,6 +3345,7 @@ router.get('/system-notifications/:id', adminAuth, async (req, res) => {
       content: notification.content,
       type: notification.type,
       image_url: notification.image_url,
+      images: notification.image_url ? [notification.image_url] : [], // 为MultiImageUpload组件提供images数组
       link_url: notification.link_url,
       is_active: notification.is_active,
       start_time: notification.start_time,
@@ -3363,7 +3365,7 @@ router.get('/system-notifications/:id', adminAuth, async (req, res) => {
 // 创建系统通知
 router.post('/system-notifications', adminAuth, async (req, res) => {
   try {
-    const { title, content, type, image_url, link_url, is_active, start_time, end_time } = req.body
+    const { title, content, type, image_url, images, link_url, is_active, start_time, end_time } = req.body
 
     if (!title || !title.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '标题不能为空' })
@@ -3379,13 +3381,21 @@ router.post('/system-notifications', adminAuth, async (req, res) => {
     }
 
     const notificationType = type || 'system'
+    
+    // 支持images数组（优先）或image_url字符串
+    let finalImageUrl = null
+    if (images && Array.isArray(images) && images.length > 0) {
+      finalImageUrl = images[0] // 取第一张图片
+    } else if (image_url) {
+      finalImageUrl = image_url.trim()
+    }
 
     const notification = await prisma.systemNotification.create({
       data: {
         title: title.trim(),
         content: content.trim(),
         type: notificationType,
-        image_url: image_url?.trim() || null,
+        image_url: finalImageUrl || null,
         link_url: link_url?.trim() || null,
         is_active: is_active !== false,
         start_time: start_time ? new Date(start_time) : null,
@@ -3404,7 +3414,7 @@ router.post('/system-notifications', adminAuth, async (req, res) => {
 router.put('/system-notifications/:id', adminAuth, async (req, res) => {
   try {
     const notificationId = BigInt(req.params.id)
-    const { title, content, type, image_url, link_url, is_active, start_time, end_time } = req.body
+    const { title, content, type, image_url, images, link_url, is_active, start_time, end_time } = req.body
 
     const notification = await prisma.systemNotification.findUnique({ where: { id: notificationId } })
     if (!notification) {
@@ -3425,7 +3435,18 @@ router.put('/system-notifications/:id', adminAuth, async (req, res) => {
       updateData.content = content.trim()
     }
     if (type !== undefined && SYSTEM_NOTIFICATION_TYPES.includes(type)) updateData.type = type
-    if (image_url !== undefined) updateData.image_url = image_url?.trim() || null
+    
+    // 支持images数组（优先）或image_url字符串
+    if (images !== undefined) {
+      if (Array.isArray(images) && images.length > 0) {
+        updateData.image_url = images[0]
+      } else {
+        updateData.image_url = null
+      }
+    } else if (image_url !== undefined) {
+      updateData.image_url = image_url?.trim() || null
+    }
+    
     if (link_url !== undefined) updateData.link_url = link_url?.trim() || null
     if (is_active !== undefined) updateData.is_active = !!is_active
     if (start_time !== undefined) updateData.start_time = start_time ? new Date(start_time) : null

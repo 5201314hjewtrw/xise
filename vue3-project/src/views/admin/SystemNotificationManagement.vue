@@ -45,7 +45,7 @@ const formFields = [
       { value: 'activity', label: '活动消息' }
     ]
   },
-  { key: 'image_url', label: '图片URL', type: 'text', placeholder: '请输入图片URL（可选）' },
+  { key: 'images', label: '图片上传', type: 'multi-image-upload', maxImages: 1 },
   { key: 'link_url', label: '跳转链接', type: 'text', placeholder: '请输入跳转链接URL（可选）' },
   { key: 'is_active', label: '启用状态', type: 'checkbox', checkboxLabel: '启用' },
   { key: 'start_time', label: '开始时间', type: 'datetime', placeholder: '选择开始时间（可选）' },
