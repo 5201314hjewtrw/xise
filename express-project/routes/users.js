@@ -7,7 +7,7 @@ const { optionalAuth, authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 const { protectPostListItem } = require('../utils/paidContentHelper');
 const { auditNickname, auditBio, isAuditEnabled } = require('../utils/contentAudit');
-const { addContentAuditTask, addAuditLogTask, isQueueEnabled, generateRandomNickname } = require('../utils/queueService');
+const { addContentAuditTask, addAuditLogTask, isQueueEnabled, generateRandomNickname, addBrowsingHistoryTask, cleanupExpiredBrowsingHistory, BROWSING_HISTORY_CONFIG } = require('../utils/queueService');
 const { checkUsernameBannedWords, checkBioBannedWords, getBannedWordAuditResult } = require('../utils/bannedWordsChecker');
 
 // 内容最大长度限制
@@ -248,10 +248,10 @@ router.delete('/verification/revoke', authenticateToken, async (req, res) => {
   }
 });
 
-// 记录浏览历史
+// 记录浏览历史（使用异步队列，限制每用户每分钟20条）
 router.post('/history', authenticateToken, async (req, res) => {
   try {
-    const userId = BigInt(req.user.id);
+    const userId = req.user.id;
     const { post_id } = req.body;
 
     if (!post_id) {
@@ -261,11 +261,9 @@ router.post('/history', authenticateToken, async (req, res) => {
       });
     }
 
-    const postId = BigInt(post_id);
-
     // 检查笔记是否存在
     const post = await prisma.post.findUnique({
-      where: { id: postId },
+      where: { id: BigInt(post_id) },
       select: { id: true, is_draft: true }
     });
 
@@ -276,22 +274,15 @@ router.post('/history', authenticateToken, async (req, res) => {
       });
     }
 
-    // 使用upsert来记录或更新浏览历史
-    await prisma.browsingHistory.upsert({
-      where: {
-        uk_user_post_history: {
-          user_id: userId,
-          post_id: postId
-        }
-      },
-      update: {
-        updated_at: new Date()
-      },
-      create: {
-        user_id: userId,
-        post_id: postId
-      }
-    });
+    // 使用异步队列记录浏览历史（带速率限制）
+    const result = await addBrowsingHistoryTask(userId, post_id);
+    
+    if (result && result.rateLimited) {
+      return res.status(HTTP_STATUS.TOO_MANY_REQUESTS || 429).json({
+        code: RESPONSE_CODES.ERROR,
+        message: `浏览历史记录频率过高，每分钟最多记录${BROWSING_HISTORY_CONFIG.rateLimit}条`
+      });
+    }
 
     res.json({
       code: RESPONSE_CODES.SUCCESS,
@@ -307,16 +298,22 @@ router.post('/history', authenticateToken, async (req, res) => {
   }
 });
 
-// 获取浏览历史列表
+// 获取浏览历史列表（只返回48小时内的记录）
 router.get('/history', authenticateToken, async (req, res) => {
   try {
     const userId = BigInt(req.user.id);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
+    
+    // 计算48小时前的时间点
+    const cutoffTime = new Date(Date.now() - BROWSING_HISTORY_CONFIG.retentionHours * 60 * 60 * 1000);
 
     const histories = await prisma.browsingHistory.findMany({
-      where: { user_id: userId },
+      where: { 
+        user_id: userId,
+        updated_at: { gte: cutoffTime }
+      },
       include: {
         post: {
           include: {
@@ -397,7 +394,8 @@ router.get('/history', authenticateToken, async (req, res) => {
     const total = await prisma.browsingHistory.count({
       where: {
         user_id: userId,
-        post: { is_draft: false }
+        post: { is_draft: false },
+        updated_at: { gte: cutoffTime }
       }
     });
 
