@@ -158,7 +158,7 @@ router.post('/posts', adminAuth, async (req, res) => {
         content: content || '',
         category_id: category_id ? parseInt(category_id) : null,
         type: type || 1,
-        is_draft: is_draft !== undefined ? Boolean(is_draft) : false
+        is_draft: is_draft !== undefined ? Boolean(is_draft) : true
       }
     })
 

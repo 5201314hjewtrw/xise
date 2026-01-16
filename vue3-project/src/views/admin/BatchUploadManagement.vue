@@ -192,6 +192,9 @@ const resetForm = () => {
   if (multiImageUploadRef.value && multiImageUploadRef.value.reset) {
     multiImageUploadRef.value.reset()
   }
+  if (videoUploadRef.value && videoUploadRef.value.reset) {
+    videoUploadRef.value.reset()
+  }
 }
 
 // Handle submit
