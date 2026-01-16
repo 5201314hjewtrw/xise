@@ -12,46 +12,16 @@ const router = useRouter()
 const navigationStore = useNavigationStore()
 const userStore = useUserStore()
 
-const loading = ref(false)
-const posts = ref([])
-const pagination = ref({
-  page: 1,
-  limit: 20,
-  total: 0,
-  pages: 0
-})
 const showClearConfirm = ref(false)
 const refreshKey = ref(0)
-
-// 加载浏览历史
-async function loadHistory() {
-  if (!userStore.isLoggedIn) return
-  
-  loading.value = true
-  try {
-    const response = await userApi.getHistory({
-      page: pagination.value.page,
-      limit: pagination.value.limit
-    })
-    
-    if (response.success && response.data) {
-      posts.value = response.data.posts || []
-      pagination.value = response.data.pagination || pagination.value
-    }
-  } catch (error) {
-    console.error('加载浏览历史失败:', error)
-  } finally {
-    loading.value = false
-  }
-}
+const hasHistory = ref(true) // 假设有历史记录，由WaterfallFlow组件控制实际显示
 
 // 清空所有历史记录
 async function clearAllHistory() {
   try {
     const response = await userApi.clearHistory()
     if (response.success) {
-      posts.value = []
-      pagination.value.total = 0
+      hasHistory.value = false
       refreshKey.value++
     }
   } catch (error) {
@@ -59,16 +29,6 @@ async function clearAllHistory() {
   } finally {
     showClearConfirm.value = false
   }
-}
-
-// 处理点赞事件
-function handleLike(data) {
-  console.log('点赞操作:', data)
-}
-
-// 处理收藏事件
-function handleCollect(data) {
-  console.log('收藏操作:', data)
 }
 
 onMounted(() => {
@@ -79,8 +39,6 @@ onMounted(() => {
     router.push('/')
     return
   }
-  
-  loadHistory()
 })
 </script>
 
@@ -92,7 +50,7 @@ onMounted(() => {
       <div class="header-title">浏览历史</div>
       <div class="header-right">
         <button 
-          v-if="posts.length > 0" 
+          v-if="hasHistory" 
           class="clear-btn" 
           @click="showClearConfirm = true"
         >
@@ -103,27 +61,12 @@ onMounted(() => {
 
     <!-- 内容区域 -->
     <div class="content-area">
-      <!-- 加载状态 -->
-      <div v-if="loading && posts.length === 0" class="loading-state">
-        <SvgIcon name="loading" width="32" height="32" class="loading-icon" />
-        <p>加载中...</p>
-      </div>
-      
-      <!-- 空状态 -->
-      <div v-else-if="!loading && posts.length === 0" class="empty-state">
-        <SvgIcon name="history" width="64" height="64" class="empty-icon" />
-        <h3>暂无浏览记录</h3>
-        <p>浏览过的笔记会在这里显示</p>
-      </div>
-      
       <!-- 历史记录列表 -->
-      <div v-else class="waterfall-container">
+      <div class="waterfall-container">
         <WaterfallFlow 
           :userId="userStore.userInfo?.user_id" 
           :type="'history'" 
           :refreshKey="refreshKey"
-          @like="handleLike" 
-          @collect="handleCollect" 
         />
       </div>
     </div>
