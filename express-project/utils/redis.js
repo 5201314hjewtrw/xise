@@ -10,30 +10,37 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 const Redis = require('ioredis');
 
-// Redis 配置
-const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT) || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: parseInt(process.env.REDIS_DB) || 0,
-  // 连接池配置
-  maxRetriesPerRequest: null, // BullMQ 要求设置为 null
-  enableReadyCheck: true,
-  // 重连策略
-  retryStrategy: (times) => {
-    const delay = Math.min(times * 50, 2000);
-    console.log(`Redis 重连中... 第 ${times} 次尝试，延迟 ${delay}ms`);
-    return delay;
-  },
-  // 连接超时
-  connectTimeout: 10000,
-  // 命令超时
-  commandTimeout: 5000,
-};
+/**
+ * 安全解析整数，返回有效数字或默认值
+ * @param {string} value - 要解析的值
+ * @param {number} defaultValue - 默认值
+ * @returns {number} 解析后的整数
+ */
+function safeParseInt(value, defaultValue) {
+  if (!value) return defaultValue;
+  const parsed = parseInt(value, 10);
+  return isNaN(parsed) ? defaultValue : parsed;
+}
 
-// 移除空密码
-if (!redisConfig.password || !redisConfig.password.trim()) {
-  delete redisConfig.password;
+/**
+ * 获取 Redis 基础配置
+ * 内部处理空密码验证，每次调用时从环境变量读取
+ * @returns {Object} Redis 基础配置
+ */
+function getBaseRedisConfig() {
+  const password = process.env.REDIS_PASSWORD;
+  const config = {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: safeParseInt(process.env.REDIS_PORT, 6379),
+    db: safeParseInt(process.env.REDIS_DB, 0),
+  };
+  
+  // 只有当密码非空时才添加
+  if (password && password.trim()) {
+    config.password = password;
+  }
+  
+  return config;
 }
 
 // Redis 客户端实例（延迟初始化）
@@ -46,18 +53,33 @@ let connectionPromise = null;
  * @returns {Object} Redis 连接配置
  */
 function getRedisConfig() {
-  const config = {
-    host: redisConfig.host,
-    port: redisConfig.port,
-    db: redisConfig.db,
-    maxRetriesPerRequest: null, // BullMQ 要求
-  };
-  
-  if (redisConfig.password) {
-    config.password = redisConfig.password;
-  }
-  
+  const config = getBaseRedisConfig();
+  config.maxRetriesPerRequest = null; // BullMQ 要求
   return config;
+}
+
+/**
+ * 获取用于创建 Redis 客户端的完整配置
+ * @returns {Object} 完整的 Redis 客户端配置
+ */
+function getFullRedisConfig() {
+  const baseConfig = getBaseRedisConfig();
+  return {
+    ...baseConfig,
+    // 连接池配置
+    maxRetriesPerRequest: null, // BullMQ 要求设置为 null
+    enableReadyCheck: true,
+    // 重连策略
+    retryStrategy: (times) => {
+      const delay = Math.min(times * 50, 2000);
+      console.log(`Redis 重连中... 第 ${times} 次尝试，延迟 ${delay}ms`);
+      return delay;
+    },
+    // 连接超时
+    connectTimeout: 10000,
+    // 命令超时
+    commandTimeout: 5000,
+  };
 }
 
 /**
@@ -74,11 +96,13 @@ async function getRedisClient() {
     return connectionPromise;
   }
 
+  const fullConfig = getFullRedisConfig();
+  
   connectionPromise = new Promise((resolve, reject) => {
-    redisClient = new Redis(redisConfig);
+    redisClient = new Redis(fullConfig);
 
     redisClient.on('connect', () => {
-      console.log(`● Redis 连接成功 (${redisConfig.host}:${redisConfig.port})`);
+      console.log(`● Redis 连接成功 (${fullConfig.host}:${fullConfig.port})`);
     });
 
     redisClient.on('ready', () => {
@@ -201,17 +225,28 @@ async function del(key) {
 
 /**
  * 批量删除缓存（支持模式匹配）
+ * 使用 SCAN 命令进行游标迭代，避免阻塞 Redis 服务器
  * @param {string} pattern - 键模式（如 'user:*'）
  * @returns {Promise<number>} 删除的键数量
  */
 async function delByPattern(pattern) {
   try {
     const client = await getRedisClient();
-    const keys = await client.keys(pattern);
-    if (keys.length === 0) return 0;
+    let cursor = '0';
+    let deletedCount = 0;
     
-    await client.del(...keys);
-    return keys.length;
+    // 使用 SCAN 命令进行游标迭代
+    do {
+      const [nextCursor, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      
+      if (keys.length > 0) {
+        await client.del(...keys);
+        deletedCount += keys.length;
+      }
+    } while (cursor !== '0');
+    
+    return deletedCount;
   } catch (error) {
     console.error(`Redis DEL PATTERN 错误 [${pattern}]:`, error.message);
     return 0;
