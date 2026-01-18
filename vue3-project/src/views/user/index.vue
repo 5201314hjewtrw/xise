@@ -31,6 +31,58 @@ const defaultBackground = ''
 const showBackgroundMenu = ref(false)
 const backgroundMenuRef = ref(null)
 
+// 工具栏相关
+const toolbarItems = ref([])
+const toolbarExpanded = ref(false)
+const toolbarContainerRef = ref(null)
+const TOOLBAR_VISIBLE_COUNT = 4 // 默认显示的工具数量
+
+// 加载工具栏配置
+const loadToolbarItems = async () => {
+  try {
+    const response = await userApi.getToolbarItems()
+    if (response && response.success && response.data) {
+      toolbarItems.value = response.data
+    }
+  } catch (error) {
+    console.error('加载工具栏配置失败:', error)
+    // 如果加载失败，使用默认的浏览历史工具
+    toolbarItems.value = [
+      { id: 0, name: '浏览历史', icon: 'history', path: '/history' }
+    ]
+  }
+}
+
+// 计算显示的工具栏项目
+const visibleToolbarItems = computed(() => {
+  if (toolbarExpanded.value || toolbarItems.value.length <= TOOLBAR_VISIBLE_COUNT) {
+    return toolbarItems.value
+  }
+  return toolbarItems.value.slice(0, TOOLBAR_VISIBLE_COUNT)
+})
+
+// 是否显示展开按钮
+const showExpandButton = computed(() => {
+  return toolbarItems.value.length > TOOLBAR_VISIBLE_COUNT
+})
+
+// 切换工具栏展开状态
+const toggleToolbarExpand = () => {
+  toolbarExpanded.value = !toolbarExpanded.value
+}
+
+// 处理工具栏项目点击
+const handleToolbarItemClick = (item) => {
+  if (item.path) {
+    // 检查是否是外部链接
+    if (item.path.startsWith('http://') || item.path.startsWith('https://')) {
+      window.open(item.path, '_blank')
+    } else {
+      router.push(item.path)
+    }
+  }
+}
+
 // 点击背景图显示菜单
 const handleBackgroundClick = () => {
   showBackgroundMenu.value = !showBackgroundMenu.value
@@ -140,6 +192,9 @@ const loadUserStats = async () => {
 // 页面挂载时自动滚动到顶部并获取统计信息
 onMounted(() => {
   navigationStore.scrollToTop('instant')
+
+  // 加载工具栏配置
+  loadToolbarItems()
 
   // 监听全局点赞和收藏事件
   eventBus.on(EVENT_TYPES.USER_LIKED_POST, handleGlobalLikeEvent)
@@ -421,10 +476,26 @@ function handleCollect(data) {
         </div>
       </div>
       <!-- 工具栏 -->
-      <div class="user-toolbar">
-        <div class="toolbar-item" @click="goToHistory">
-          <SvgIcon name="history" width="20" height="20" />
-          <span>浏览历史</span>
+      <div class="user-toolbar" ref="toolbarContainerRef">
+        <div class="toolbar-scroll-container" :class="{ expanded: toolbarExpanded }">
+          <div 
+            v-for="item in visibleToolbarItems" 
+            :key="item.id" 
+            class="toolbar-item" 
+            @click="handleToolbarItemClick(item)"
+          >
+            <SvgIcon :name="item.icon" width="20" height="20" />
+            <span>{{ item.name }}</span>
+          </div>
+          <!-- 展开/收起按钮 -->
+          <div 
+            v-if="showExpandButton" 
+            class="toolbar-item toolbar-expand-btn" 
+            @click="toggleToolbarExpand"
+          >
+            <SvgIcon :name="toolbarExpanded ? 'arrowTop' : 'down'" width="20" height="20" />
+            <span>{{ toolbarExpanded ? '收起' : '更多' }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -831,20 +902,35 @@ function handleCollect(data) {
 
 /* ---------- 3.4. 工具栏样式 ---------- */
 .user-toolbar {
-  display: flex;
   padding: 16px 16px 0;
-  gap: 12px;
   position: relative;
   z-index: 1;
+  overflow: hidden;
+}
+
+.toolbar-scroll-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  transition: max-height 0.3s ease;
+}
+
+.toolbar-scroll-container:not(.expanded) {
+  max-height: 44px;
+  overflow: hidden;
+}
+
+.toolbar-scroll-container.expanded {
+  max-height: none;
 }
 
 .toolbar-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 10px 16px;
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
+  border-radius: 8px;
   color: #ffffff;
   font-size: 14px;
   cursor: pointer;
@@ -852,15 +938,32 @@ function handleCollect(data) {
   backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.3);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .toolbar-item:hover {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
+}
+
+.toolbar-item:active {
+  transform: translateY(0);
 }
 
 .toolbar-item :deep(svg) {
   flex-shrink: 0;
+}
+
+.toolbar-expand-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.toolbar-expand-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 /* ---------- 3.5. 登录提示样式 ---------- */

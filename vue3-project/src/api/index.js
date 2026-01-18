@@ -85,6 +85,11 @@ export const userApi = {
   // 清空所有浏览历史
   clearHistory() {
     return request.delete('/users/history')
+  },
+
+  // 获取工具栏配置
+  getToolbarItems() {
+    return request.get('/users/toolbar/items')
   }
 }
 

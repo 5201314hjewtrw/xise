@@ -565,3 +565,19 @@ model User {
   @@index([oauth2_id], name: "idx_oauth2_id")
   @@map("users")
 }
+
+// 工具栏项目表
+model ToolbarItem {
+  id         Int      @id @default(autoincrement())
+  name       String   @db.VarChar(50)           // 工具名称
+  icon       String   @db.VarChar(50)           // 图标名称（对应 SvgIcon 组件）
+  path       String   @db.VarChar(200)          // 跳转路径
+  sort_order Int      @default(0)               // 排序顺序
+  enabled    Boolean  @default(true)            // 是否启用
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([enabled], name: "idx_toolbar_item_enabled")
+  @@index([sort_order], name: "idx_toolbar_item_sort_order")
+  @@map("toolbar_items")
+}

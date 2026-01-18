@@ -37,6 +37,7 @@ import ContentReviewManagement from '@/views/admin/ContentReviewManagement.vue'
 import QueueManagement from '@/views/admin/QueueManagement.vue'
 import BannedWordsManagement from '@/views/admin/BannedWordsManagement.vue'
 import SystemNotificationManagement from '@/views/admin/SystemNotificationManagement.vue'
+import ToolbarManagement from '@/views/admin/ToolbarManagement.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -290,6 +291,11 @@ const router = createRouter({
           path: 'system-notifications',
           name: 'admin_system_notifications',
           component: SystemNotificationManagement
+        },
+        {
+          path: 'toolbar',
+          name: 'admin_toolbar',
+          component: ToolbarManagement
         }
       ]
     }

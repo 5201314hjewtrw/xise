@@ -3522,5 +3522,193 @@ router.put('/system-notifications/:id/toggle-active', adminAuth, async (req, res
   }
 })
 
+// ===================== 工具栏管理 =====================
+
+// 获取工具栏项目列表
+router.get('/toolbar-items', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { name, enabled, sortField = 'sort_order', sortOrder = 'asc' } = req.query
+
+    const where = {}
+    if (name) where.name = { contains: name }
+    if (enabled !== undefined && enabled !== '') where.enabled = enabled === 'true' || enabled === '1'
+
+    const [total, items] = await Promise.all([
+      prisma.toolbarItem.count({ where }),
+      prisma.toolbarItem.findMany({
+        where,
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取工具栏项目列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+// 获取单个工具栏项目
+router.get('/toolbar-items/:id', adminAuth, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id)
+    const item = await prisma.toolbarItem.findUnique({ where: { id: itemId } })
+
+    if (!item) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '工具栏项目不存在' })
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: item, message: 'success' })
+  } catch (error) {
+    console.error('获取工具栏项目详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+// 创建工具栏项目
+router.post('/toolbar-items', adminAuth, async (req, res) => {
+  try {
+    const { name, icon, path, sort_order, enabled } = req.body
+
+    if (!name || !name.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '工具名称不能为空' })
+    }
+
+    if (!icon || !icon.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '图标不能为空' })
+    }
+
+    if (!path || !path.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '跳转路径不能为空' })
+    }
+
+    const newItem = await prisma.toolbarItem.create({
+      data: {
+        name: name.trim(),
+        icon: icon.trim(),
+        path: path.trim(),
+        sort_order: sort_order !== undefined ? parseInt(sort_order) : 0,
+        enabled: enabled !== false
+      }
+    })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: newItem.id }, message: '创建成功' })
+  } catch (error) {
+    console.error('创建工具栏项目失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+// 更新工具栏项目
+router.put('/toolbar-items/:id', adminAuth, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id)
+    const { name, icon, path, sort_order, enabled } = req.body
+
+    const existing = await prisma.toolbarItem.findUnique({ where: { id: itemId } })
+    if (!existing) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '工具栏项目不存在' })
+    }
+
+    const updateData = {}
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '工具名称不能为空' })
+      }
+      updateData.name = name.trim()
+    }
+    if (icon !== undefined) {
+      if (!icon.trim()) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '图标不能为空' })
+      }
+      updateData.icon = icon.trim()
+    }
+    if (path !== undefined) {
+      if (!path.trim()) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '跳转路径不能为空' })
+      }
+      updateData.path = path.trim()
+    }
+    if (sort_order !== undefined) updateData.sort_order = parseInt(sort_order)
+    if (enabled !== undefined) updateData.enabled = !!enabled
+
+    await prisma.toolbarItem.update({ where: { id: itemId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新工具栏项目失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+// 删除工具栏项目
+router.delete('/toolbar-items/:id', adminAuth, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id)
+
+    const existing = await prisma.toolbarItem.findUnique({ where: { id: itemId } })
+    if (!existing) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '工具栏项目不存在' })
+    }
+
+    await prisma.toolbarItem.delete({ where: { id: itemId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除工具栏项目失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// 批量删除工具栏项目
+router.delete('/toolbar-items', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    await prisma.toolbarItem.deleteMany({ where: { id: { in: ids.map(id => parseInt(id)) } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除工具栏项目失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// 切换工具栏项目启用状态
+router.put('/toolbar-items/:id/toggle-enabled', adminAuth, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id)
+
+    const item = await prisma.toolbarItem.findUnique({ where: { id: itemId } })
+    if (!item) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '工具栏项目不存在' })
+    }
+
+    await prisma.toolbarItem.update({
+      where: { id: itemId },
+      data: { enabled: !item.enabled }
+    })
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: item.enabled ? '已禁用' : '已启用',
+      data: { enabled: !item.enabled }
+    })
+  } catch (error) {
+    console.error('切换工具栏项目状态失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '操作失败' })
+  }
+})
+
 module.exports = router
 module.exports.isAiAutoReviewEnabled = isAiAutoReviewEnabled
