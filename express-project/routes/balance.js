@@ -560,4 +560,144 @@ router.get('/check-purchase/:postId', authenticateToken, async (req, res) => {
   }
 });
 
+// 获取用户购买记录（订单详情）
+router.get('/orders', authenticateToken, async (req, res) => {
+  try {
+    const userId = BigInt(req.user.id);
+    const { page = 1, limit = 10 } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // 获取用户的购买记录
+    const [orders, total] = await Promise.all([
+      prisma.userPurchasedContent.findMany({
+        where: { user_id: userId },
+        include: {
+          post: {
+            select: {
+              id: true,
+              title: true,
+              type: true,
+              images: {
+                select: { image_url: true },
+                take: 1
+              }
+            }
+          },
+          author: {
+            select: {
+              id: true,
+              user_id: true,
+              nickname: true,
+              avatar: true
+            }
+          }
+        },
+        orderBy: { purchased_at: 'desc' },
+        skip,
+        take: limitNum
+      }),
+      prisma.userPurchasedContent.count({
+        where: { user_id: userId }
+      })
+    ]);
+
+    // 格式化响应数据
+    const formattedOrders = orders.map(order => ({
+      id: order.id,
+      postId: order.post_id,
+      postTitle: order.post?.title || '已删除的内容',
+      postType: order.post?.type || 1,
+      postCover: order.post?.images?.[0]?.image_url || null,
+      authorId: order.author?.user_id || null,
+      authorName: order.author?.nickname || '未知用户',
+      authorAvatar: order.author?.avatar || null,
+      price: parseFloat(order.price),
+      purchaseType: order.purchase_type,
+      purchasedAt: order.purchased_at
+    }));
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        orders: formattedOrders,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      },
+      message: 'success'
+    });
+  } catch (error) {
+    console.error('获取购买记录失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    });
+  }
+});
+
+// 获取石榴点交易记录
+router.get('/transactions', authenticateToken, async (req, res) => {
+  try {
+    const userId = BigInt(req.user.id);
+    const { page = 1, limit = 10, type } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // 构建查询条件
+    const whereCondition = { user_id: userId };
+    if (type) {
+      whereCondition.type = type;
+    }
+
+    // 获取交易记录
+    const [transactions, total] = await Promise.all([
+      prisma.pointsLog.findMany({
+        where: whereCondition,
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: limitNum
+      }),
+      prisma.pointsLog.count({
+        where: whereCondition
+      })
+    ]);
+
+    // 格式化响应数据
+    const formattedTransactions = transactions.map(tx => ({
+      id: tx.id,
+      amount: parseFloat(tx.amount),
+      balanceAfter: parseFloat(tx.balance_after),
+      type: tx.type,
+      reason: tx.reason,
+      createdAt: tx.created_at
+    }));
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        transactions: formattedTransactions,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      },
+      message: 'success'
+    });
+  } catch (error) {
+    console.error('获取交易记录失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    });
+  }
+});
+
 module.exports = router;

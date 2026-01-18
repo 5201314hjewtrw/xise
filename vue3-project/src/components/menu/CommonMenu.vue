@@ -9,7 +9,9 @@ import { useAccountSecurityStore } from '@/stores/accountSecurity'
 import { useBalanceStore } from '@/stores/balance'
 import ColorPickerMenuItem from '@/components/menu/ColorPickerMenuItem.vue'
 import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const userStore = useUserStore()
 const authStore = useAuthStore()
 const keyboardShortcutsStore = useKeyboardShortcutsStore()
@@ -42,8 +44,8 @@ const handleMenuClick = (action) => {
     accountSecurityStore.openAccountSecurityModal()
   } else if (action === 'keyboardShortcuts') {
     keyboardShortcutsStore.openKeyboardShortcutsModal()
-  } else if (action === 'balanceCenter') {
-    balanceStore.openBalanceModal()
+  } else if (action === 'wallet') {
+    router.push({ name: 'wallet' })
   }
 }
 
@@ -61,8 +63,8 @@ onMounted(() => {
   <DropdownItem v-if="userStore.isLoggedIn" @click="handleMenuClick('accountSecurity')">
     账号与安全
   </DropdownItem>
-  <DropdownItem v-if="userStore.isLoggedIn && balanceStore.enabled" @click="handleMenuClick('balanceCenter')">
-    余额中心
+  <DropdownItem v-if="userStore.isLoggedIn" @click="handleMenuClick('wallet')">
+    钱包
   </DropdownItem>
   <DropdownDivider />
   <ColorPickerMenuItem />

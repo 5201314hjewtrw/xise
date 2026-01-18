@@ -949,6 +949,21 @@ export const balanceApi = {
   checkPurchase(postId) {
     console.log('🔍 [API] 检查购买状态, postId:', postId)
     return request.get(`/balance/check-purchase/${postId}`)
+  },
+
+  // 获取本地石榴点余额
+  getLocalPoints() {
+    return request.get('/balance/local-points')
+  },
+
+  // 获取购买记录（订单详情）
+  getOrders(params = {}) {
+    return request.get('/balance/orders', { params })
+  },
+
+  // 获取交易记录
+  getTransactions(params = {}) {
+    return request.get('/balance/transactions', { params })
   }
 }
 

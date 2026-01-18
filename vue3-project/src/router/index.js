@@ -7,6 +7,7 @@ import user from '@/views/user/index.vue'
 import userProfile from '@/views/user/UserProfile.vue'
 import FollowList from '@/views/user/FollowList.vue'
 import BrowsingHistory from '@/views/user/BrowsingHistory.vue'
+import Wallet from '@/views/user/Wallet.vue'
 import ChannelPage from '@/views/explore/ChannelPage.vue'
 import FollowingPage from '@/views/explore/FollowingPage.vue'
 import PostDetail from '@/views/PostDetail.vue'
@@ -131,6 +132,11 @@ const router = createRouter({
           path: 'history',
           name: 'browsing_history',
           component: BrowsingHistory
+        },
+        {
+          path: 'wallet',
+          name: 'wallet',
+          component: Wallet
         },
         {
           path: 'search_result',

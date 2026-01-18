@@ -28,9 +28,30 @@ export const useBalanceStore = defineStore('balance', () => {
     }
   }
 
+  // 获取本地石榴点余额（不依赖余额中心是否启用）
+  const fetchLocalPoints = async () => {
+    isLoading.value = true
+    try {
+      const response = await balanceApi.getLocalPoints()
+      if (response.success) {
+        localPoints.value = response.data.points || 0
+        return response.data.points
+      }
+      return 0
+    } catch (error) {
+      console.error('获取本地石榴点失败:', error)
+      return 0
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   // 获取用户外部余额和本地石榴点
   const fetchUserBalance = async () => {
-    if (!enabled.value) return null
+    if (!enabled.value) {
+      // 如果余额中心未启用，只获取本地石榴点
+      return fetchLocalPoints()
+    }
     
     isLoading.value = true
     try {
@@ -129,6 +150,7 @@ export const useBalanceStore = defineStore('balance', () => {
     
     // 方法
     fetchConfig,
+    fetchLocalPoints,
     fetchUserBalance,
     exchangeIn,
     exchangeOut,
