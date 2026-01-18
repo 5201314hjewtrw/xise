@@ -37,7 +37,7 @@ model Audit {
   audit_time   DateTime?
   status       Int?     @default(0) @db.TinyInt
 
-  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade, map: "audit_to_user_fk")
 
   @@index([user_id], name: "idx_user_id")
   @@index([type], name: "idx_type")
