@@ -2,14 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
 const { prisma } = require('../config/config');
+const { getOrSet, CACHE_TTL } = require('../utils/cache');
 
 // 获取所有标签
 router.get('/', async (req, res) => {
   try {
-    const rows = await prisma.tag.findMany({
-      orderBy: { name: 'asc' }
-    });
-
+    const rows = await getOrSet('tags:all', async () => {
+      return await prisma.tag.findMany({
+        orderBy: { name: 'asc' }
+      });
+    }, CACHE_TTL.TAGS_POPULAR);
 
     res.json({
       code: RESPONSE_CODES.SUCCESS,
@@ -26,16 +28,18 @@ router.get('/', async (req, res) => {
 router.get('/hot', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    // 直接使用 use_count 字段获取热门标签
-    const rows = await prisma.tag.findMany({
-      where: { use_count: { gt: 0 } },
-      orderBy: [
-        { use_count: 'desc' },
-        { name: 'asc' }
-      ],
-      take: limit
-    });
-
+    // 使用缓存获取热门标签（不同 limit 值使用不同的缓存键）
+    const cacheKey = `tags:hot:${limit}`;
+    const rows = await getOrSet(cacheKey, async () => {
+      return await prisma.tag.findMany({
+        where: { use_count: { gt: 0 } },
+        orderBy: [
+          { use_count: 'desc' },
+          { name: 'asc' }
+        ],
+        take: limit
+      });
+    }, CACHE_TTL.TAGS_POPULAR);
 
     res.json({
       code: RESPONSE_CODES.SUCCESS,

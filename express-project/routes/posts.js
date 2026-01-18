@@ -16,6 +16,7 @@ const {
   protectPostDetail 
 } = require('../utils/paidContentHelper');
 const { getRecommendedPosts, getHotPosts } = require('../utils/recommendationService');
+const { invalidate } = require('../utils/cache');
 
 // Post type constants
 const POST_TYPE_IMAGE = 1;
@@ -540,47 +541,66 @@ router.get('/:id/comments', optionalAuth, async (req, res) => {
       skip: skip
     });
 
-    // 格式化评论并添加额外信息
-    const formattedComments = await Promise.all(comments.map(async (comment) => {
-      const formatted = {
-        id: Number(comment.id),
-        post_id: Number(comment.post_id),
-        user_id: Number(comment.user_id),
-        parent_id: comment.parent_id ? Number(comment.parent_id) : null,
-        content: comment.content,
-        like_count: comment.like_count,
-        audit_status: comment.audit_status,
-        is_public: comment.is_public,
-        audit_result: comment.audit_result,
-        created_at: comment.created_at,
-        nickname: comment.user?.nickname,
-        user_avatar: comment.user?.avatar,
-        user_auto_id: comment.user ? Number(comment.user.id) : null,
-        user_display_id: comment.user?.user_id,
-        user_location: comment.user?.location,
-        verified: comment.user?.verified
-      };
+    // 批量获取点赞状态和子评论数量（优化N+1查询）
+    const commentIds = comments.map(c => c.id);
+    
+    // 批量查询点赞状态
+    let likedCommentIds = new Set();
+    if (currentUserId && commentIds.length > 0) {
+      const likes = await prisma.like.findMany({
+        where: {
+          user_id: currentUserId,
+          target_type: 2,
+          target_id: { in: commentIds }
+        },
+        select: { target_id: true }
+      });
+      likedCommentIds = new Set(likes.map(l => l.target_id));
+    }
 
-      // 检查点赞状态
-      if (currentUserId) {
-        const likeExists = await prisma.like.findUnique({
-          where: { uk_user_target: { user_id: currentUserId, target_type: 2, target_id: comment.id } }
-        });
-        formatted.liked = !!likeExists;
-      } else {
-        formatted.liked = false;
-      }
+    // 批量查询子评论数量
+    const replyCountMap = new Map();
+    if (commentIds.length > 0) {
+      const replyCounts = await prisma.comment.groupBy({
+        by: ['parent_id'],
+        where: {
+          parent_id: { in: commentIds },
+          ...(currentUserId ? {
+            OR: [
+              { is_public: true },
+              { user_id: currentUserId }
+            ]
+          } : { is_public: true })
+        },
+        _count: { id: true }
+      });
+      replyCounts.forEach(rc => {
+        if (rc.parent_id) {
+          replyCountMap.set(rc.parent_id, rc._count.id);
+        }
+      });
+    }
 
-      // 获取子评论数量
-      const childCountWhere = { parent_id: comment.id };
-      if (currentUserId) {
-        childCountWhere.OR = [{ is_public: true }, { user_id: currentUserId }];
-      } else {
-        childCountWhere.is_public = true;
-      }
-      formatted.reply_count = await prisma.comment.count({ where: childCountWhere });
-
-      return formatted;
+    // 格式化评论并添加额外信息（无需额外数据库查询）
+    const formattedComments = comments.map(comment => ({
+      id: Number(comment.id),
+      post_id: Number(comment.post_id),
+      user_id: Number(comment.user_id),
+      parent_id: comment.parent_id ? Number(comment.parent_id) : null,
+      content: comment.content,
+      like_count: comment.like_count,
+      audit_status: comment.audit_status,
+      is_public: comment.is_public,
+      audit_result: comment.audit_result,
+      created_at: comment.created_at,
+      nickname: comment.user?.nickname,
+      user_avatar: comment.user?.avatar,
+      user_auto_id: comment.user ? Number(comment.user.id) : null,
+      user_display_id: comment.user?.user_id,
+      user_location: comment.user?.location,
+      verified: comment.user?.verified,
+      liked: likedCommentIds.has(comment.id),
+      reply_count: replyCountMap.get(comment.id) || 0
     }));
 
     const total = await prisma.comment.count({ where });
@@ -791,16 +811,40 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
-    // Handle tags
+    // Handle tags (optimized batch operations)
     if (tags.length > 0) {
-      for (const tagName of tags) {
-        let tag = await prisma.tag.findUnique({ where: { name: tagName } });
-        if (!tag) {
-          tag = await prisma.tag.create({ data: { name: tagName } });
+      // Step 1: Batch query existing tags
+      const existingTags = await prisma.tag.findMany({
+        where: { name: { in: tags } },
+        select: { id: true, name: true }
+      });
+      const existingTagMap = new Map(existingTags.map(t => [t.name, t.id]));
+      
+      // Step 2: Identify and create missing tags
+      const missingTagNames = tags.filter(name => !existingTagMap.has(name));
+      if (missingTagNames.length > 0) {
+        // Create missing tags one by one (Prisma createMany doesn't return created IDs)
+        for (const name of missingTagNames) {
+          const newTag = await prisma.tag.create({ data: { name } });
+          existingTagMap.set(name, newTag.id);
         }
-        await prisma.postTag.create({ data: { post_id: postId, tag_id: tag.id } });
-        await prisma.tag.update({ where: { id: tag.id }, data: { use_count: { increment: 1 } } });
       }
+      
+      // Step 3: Get all tag IDs and batch create postTag associations
+      const tagIds = tags.map(name => existingTagMap.get(name));
+      await prisma.postTag.createMany({
+        data: tagIds.map(tag_id => ({ post_id: postId, tag_id })),
+        skipDuplicates: true
+      });
+      
+      // Step 4: Batch update tag counts
+      await prisma.tag.updateMany({
+        where: { id: { in: tagIds } },
+        data: { use_count: { increment: 1 } }
+      });
+      
+      // 使标签缓存失效
+      invalidate('tags:*');
     }
 
     // Handle payment settings
@@ -929,21 +973,55 @@ router.put('/:id', authenticateToken, async (req, res) => {
       }
     }
 
-    // Update tags
+    // Update tags (optimized batch operations)
     if (tags !== undefined) {
-      const oldTags = await prisma.postTag.findMany({ where: { post_id: postId }, include: { tag: true } });
-      for (const oldTag of oldTags) {
-        await prisma.tag.update({ where: { id: oldTag.tag_id }, data: { use_count: { decrement: 1 } } });
+      const oldTags = await prisma.postTag.findMany({ where: { post_id: postId }, select: { tag_id: true } });
+      
+      // 使用批量更新减少旧标签计数
+      if (oldTags.length > 0) {
+        const oldTagIds = oldTags.map(t => t.tag_id);
+        await prisma.tag.updateMany({
+          where: { id: { in: oldTagIds } },
+          data: { use_count: { decrement: 1 } }
+        });
       }
+      
       await prisma.postTag.deleteMany({ where: { post_id: postId } });
-      for (const tagName of tags) {
-        let tag = await prisma.tag.findUnique({ where: { name: tagName } });
-        if (!tag) {
-          tag = await prisma.tag.create({ data: { name: tagName } });
+      
+      // 添加新标签（使用批量操作优化）
+      if (tags.length > 0) {
+        // Step 1: Batch query existing tags
+        const existingTags = await prisma.tag.findMany({
+          where: { name: { in: tags } },
+          select: { id: true, name: true }
+        });
+        const existingTagMap = new Map(existingTags.map(t => [t.name, t.id]));
+        
+        // Step 2: Identify and create missing tags
+        const missingTagNames = tags.filter(name => !existingTagMap.has(name));
+        if (missingTagNames.length > 0) {
+          for (const name of missingTagNames) {
+            const newTag = await prisma.tag.create({ data: { name } });
+            existingTagMap.set(name, newTag.id);
+          }
         }
-        await prisma.postTag.create({ data: { post_id: postId, tag_id: tag.id } });
-        await prisma.tag.update({ where: { id: tag.id }, data: { use_count: { increment: 1 } } });
+        
+        // Step 3: Get all tag IDs and batch create postTag associations
+        const newTagIds = tags.map(name => existingTagMap.get(name));
+        await prisma.postTag.createMany({
+          data: newTagIds.map(tag_id => ({ post_id: postId, tag_id })),
+          skipDuplicates: true
+        });
+        
+        // Step 4: Batch update tag counts
+        await prisma.tag.updateMany({
+          where: { id: { in: newTagIds } },
+          data: { use_count: { increment: 1 } }
+        });
       }
+      
+      // 使标签缓存失效
+      invalidate('tags:*');
     }
 
     // Update payment settings
@@ -998,10 +1076,17 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     post.videos.forEach(v => { if (v.video_url) filesToDelete.push(v.video_url); if (v.cover_url) filesToDelete.push(v.cover_url); });
     post.attachments.forEach(a => filesToDelete.push(a.attachment_url));
 
-    // Update tag counts
-    const postTags = await prisma.postTag.findMany({ where: { post_id: postId } });
-    for (const pt of postTags) {
-      await prisma.tag.update({ where: { id: pt.tag_id }, data: { use_count: { decrement: 1 } } });
+    // Update tag counts (batch operation)
+    const postTags = await prisma.postTag.findMany({ where: { post_id: postId }, select: { tag_id: true } });
+    if (postTags.length > 0) {
+      const tagIds = postTags.map(pt => pt.tag_id);
+      // 使用批量更新替代循环内单独更新
+      await prisma.tag.updateMany({
+        where: { id: { in: tagIds } },
+        data: { use_count: { decrement: 1 } }
+      });
+      // 使标签缓存失效
+      invalidate('tags:*');
     }
 
     // Delete the post (cascades will handle related records)

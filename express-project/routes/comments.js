@@ -107,57 +107,66 @@ router.get('/', optionalAuth, async (req, res) => {
       skip: skip
     });
 
-    // 格式化评论并添加额外信息
-    const formattedComments = await Promise.all(comments.map(async (comment) => {
-      const formatted = {
-        id: Number(comment.id),
-        post_id: Number(comment.post_id),
-        user_id: Number(comment.user_id),
-        parent_id: comment.parent_id ? Number(comment.parent_id) : null,
-        content: comment.content,
-        like_count: comment.like_count,
-        audit_status: comment.audit_status,
-        is_public: comment.is_public,
-        audit_result: comment.audit_result,
-        created_at: comment.created_at,
-        nickname: comment.user?.nickname,
-        user_avatar: comment.user?.avatar,
-        user_auto_id: comment.user ? Number(comment.user.id) : null,
-        user_display_id: comment.user?.user_id,
-        user_location: comment.user?.location,
-        verified: comment.user?.verified
-      };
+    // 批量获取点赞状态和子评论数量（优化N+1查询）
+    const commentIds = comments.map(c => c.id);
+    
+    // 批量查询点赞状态
+    let likedCommentIds = new Set();
+    if (currentUserId && commentIds.length > 0) {
+      const likes = await prisma.like.findMany({
+        where: {
+          user_id: currentUserId,
+          target_type: 2,
+          target_id: { in: commentIds }
+        },
+        select: { target_id: true }
+      });
+      likedCommentIds = new Set(likes.map(l => l.target_id));
+    }
 
-      // 检查点赞状态
-      if (currentUserId) {
-        const likeExists = await prisma.like.findUnique({
-          where: {
-            uk_user_target: {
-              user_id: currentUserId,
-              target_type: 2,
-              target_id: comment.id
-            }
-          }
-        });
-        formatted.liked = !!likeExists;
-      } else {
-        formatted.liked = false;
-      }
+    // 批量查询子评论数量
+    const replyCountMap = new Map();
+    if (commentIds.length > 0) {
+      const replyCounts = await prisma.comment.groupBy({
+        by: ['parent_id'],
+        where: {
+          parent_id: { in: commentIds },
+          ...(currentUserId ? {
+            OR: [
+              { is_public: true },
+              { user_id: currentUserId }
+            ]
+          } : { is_public: true })
+        },
+        _count: { id: true }
+      });
+      replyCounts.forEach(rc => {
+        if (rc.parent_id) {
+          replyCountMap.set(rc.parent_id, rc._count.id);
+        }
+      });
+    }
 
-      // 获取子评论数量
-      const childCountWhere = { parent_id: comment.id };
-      if (currentUserId) {
-        childCountWhere.OR = [
-          { is_public: true },
-          { user_id: currentUserId }
-        ];
-      } else {
-        childCountWhere.is_public = true;
-      }
-      const replyCount = await prisma.comment.count({ where: childCountWhere });
-      formatted.reply_count = replyCount;
-
-      return formatted;
+    // 格式化评论并添加额外信息（无需额外数据库查询）
+    const formattedComments = comments.map(comment => ({
+      id: Number(comment.id),
+      post_id: Number(comment.post_id),
+      user_id: Number(comment.user_id),
+      parent_id: comment.parent_id ? Number(comment.parent_id) : null,
+      content: comment.content,
+      like_count: comment.like_count,
+      audit_status: comment.audit_status,
+      is_public: comment.is_public,
+      audit_result: comment.audit_result,
+      created_at: comment.created_at,
+      nickname: comment.user?.nickname,
+      user_avatar: comment.user?.avatar,
+      user_auto_id: comment.user ? Number(comment.user.id) : null,
+      user_display_id: comment.user?.user_id,
+      user_location: comment.user?.location,
+      verified: comment.user?.verified,
+      liked: likedCommentIds.has(comment.id),
+      reply_count: replyCountMap.get(comment.id) || 0
     }));
 
     // 获取总数
@@ -526,43 +535,40 @@ router.get('/:id/replies', optionalAuth, async (req, res) => {
       skip: skip
     });
 
-    // 格式化评论并添加点赞状态
-    const formattedComments = await Promise.all(comments.map(async (comment) => {
-      const formatted = {
-        id: Number(comment.id),
-        post_id: Number(comment.post_id),
-        user_id: Number(comment.user_id),
-        parent_id: comment.parent_id ? Number(comment.parent_id) : null,
-        content: comment.content,
-        like_count: comment.like_count,
-        audit_status: comment.audit_status,
-        is_public: comment.is_public,
-        audit_result: comment.audit_result,
-        created_at: comment.created_at,
-        nickname: comment.user?.nickname,
-        user_avatar: comment.user?.avatar,
-        user_auto_id: comment.user ? Number(comment.user.id) : null,
-        user_display_id: comment.user?.user_id,
-        user_location: comment.user?.location,
-        verified: comment.user?.verified
-      };
+    // 批量获取点赞状态（优化N+1查询）
+    const commentIds = comments.map(c => c.id);
+    let likedCommentIds = new Set();
+    if (currentUserId && commentIds.length > 0) {
+      const likes = await prisma.like.findMany({
+        where: {
+          user_id: currentUserId,
+          target_type: 2,
+          target_id: { in: commentIds }
+        },
+        select: { target_id: true }
+      });
+      likedCommentIds = new Set(likes.map(l => l.target_id));
+    }
 
-      if (currentUserId) {
-        const likeExists = await prisma.like.findUnique({
-          where: {
-            uk_user_target: {
-              user_id: currentUserId,
-              target_type: 2,
-              target_id: comment.id
-            }
-          }
-        });
-        formatted.liked = !!likeExists;
-      } else {
-        formatted.liked = false;
-      }
-
-      return formatted;
+    // 格式化评论并添加点赞状态（无需额外数据库查询）
+    const formattedComments = comments.map(comment => ({
+      id: Number(comment.id),
+      post_id: Number(comment.post_id),
+      user_id: Number(comment.user_id),
+      parent_id: comment.parent_id ? Number(comment.parent_id) : null,
+      content: comment.content,
+      like_count: comment.like_count,
+      audit_status: comment.audit_status,
+      is_public: comment.is_public,
+      audit_result: comment.audit_result,
+      created_at: comment.created_at,
+      nickname: comment.user?.nickname,
+      user_avatar: comment.user?.avatar,
+      user_auto_id: comment.user ? Number(comment.user.id) : null,
+      user_display_id: comment.user?.user_id,
+      user_location: comment.user?.location,
+      verified: comment.user?.verified,
+      liked: likedCommentIds.has(comment.id)
     }));
 
     // 获取总数
