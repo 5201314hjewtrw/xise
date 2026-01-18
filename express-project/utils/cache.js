@@ -127,7 +127,17 @@ async function getOrSet(key, loader, ttlMs = 5 * 60 * 1000) {
 
 /**
  * 使缓存失效
- * @param {string} keyPattern - 缓存键模式（支持简单的前缀匹配）
+ * 
+ * 支持两种模式：
+ * 1. 精确匹配：直接传入完整的缓存键，如 'tags:all'
+ * 2. 前缀匹配：在键末尾加 '*'，如 'tags:*' 会匹配所有以 'tags:' 开头的键
+ * 
+ * 注意：仅支持末尾的 '*' 通配符，不支持其他通配符模式（如 '*.js' 或 'a*b'）
+ * 
+ * @param {string} keyPattern - 缓存键或带前缀通配符的模式
+ * @example
+ * invalidate('tags:all')     // 删除精确匹配的键
+ * invalidate('tags:*')       // 删除所有以 'tags:' 开头的键
  */
 function invalidate(keyPattern) {
   if (keyPattern.endsWith('*')) {

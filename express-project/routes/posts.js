@@ -813,13 +813,21 @@ router.post('/', authenticateToken, async (req, res) => {
 
     // Handle tags
     if (tags.length > 0) {
+      const tagIds = [];
       for (const tagName of tags) {
         let tag = await prisma.tag.findUnique({ where: { name: tagName } });
         if (!tag) {
           tag = await prisma.tag.create({ data: { name: tagName } });
         }
         await prisma.postTag.create({ data: { post_id: postId, tag_id: tag.id } });
-        await prisma.tag.update({ where: { id: tag.id }, data: { use_count: { increment: 1 } } });
+        tagIds.push(tag.id);
+      }
+      // 使用批量更新增加标签计数
+      if (tagIds.length > 0) {
+        await prisma.tag.updateMany({
+          where: { id: { in: tagIds } },
+          data: { use_count: { increment: 1 } }
+        });
       }
       // 使标签缓存失效
       invalidate('tags:*');
@@ -953,19 +961,38 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     // Update tags
     if (tags !== undefined) {
-      const oldTags = await prisma.postTag.findMany({ where: { post_id: postId }, include: { tag: true } });
-      for (const oldTag of oldTags) {
-        await prisma.tag.update({ where: { id: oldTag.tag_id }, data: { use_count: { decrement: 1 } } });
+      const oldTags = await prisma.postTag.findMany({ where: { post_id: postId }, select: { tag_id: true } });
+      
+      // 使用批量更新减少旧标签计数
+      if (oldTags.length > 0) {
+        const oldTagIds = oldTags.map(t => t.tag_id);
+        await prisma.tag.updateMany({
+          where: { id: { in: oldTagIds } },
+          data: { use_count: { decrement: 1 } }
+        });
       }
+      
       await prisma.postTag.deleteMany({ where: { post_id: postId } });
+      
+      // 添加新标签（需要逐个处理以检查是否需要创建新标签）
+      const newTagIds = [];
       for (const tagName of tags) {
         let tag = await prisma.tag.findUnique({ where: { name: tagName } });
         if (!tag) {
           tag = await prisma.tag.create({ data: { name: tagName } });
         }
         await prisma.postTag.create({ data: { post_id: postId, tag_id: tag.id } });
-        await prisma.tag.update({ where: { id: tag.id }, data: { use_count: { increment: 1 } } });
+        newTagIds.push(tag.id);
       }
+      
+      // 使用批量更新增加新标签计数
+      if (newTagIds.length > 0) {
+        await prisma.tag.updateMany({
+          where: { id: { in: newTagIds } },
+          data: { use_count: { increment: 1 } }
+        });
+      }
+      
       // 使标签缓存失效
       invalidate('tags:*');
     }
@@ -1022,12 +1049,15 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     post.videos.forEach(v => { if (v.video_url) filesToDelete.push(v.video_url); if (v.cover_url) filesToDelete.push(v.cover_url); });
     post.attachments.forEach(a => filesToDelete.push(a.attachment_url));
 
-    // Update tag counts
-    const postTags = await prisma.postTag.findMany({ where: { post_id: postId } });
+    // Update tag counts (batch operation)
+    const postTags = await prisma.postTag.findMany({ where: { post_id: postId }, select: { tag_id: true } });
     if (postTags.length > 0) {
-      for (const pt of postTags) {
-        await prisma.tag.update({ where: { id: pt.tag_id }, data: { use_count: { decrement: 1 } } });
-      }
+      const tagIds = postTags.map(pt => pt.tag_id);
+      // 使用批量更新替代循环内单独更新
+      await prisma.tag.updateMany({
+        where: { id: { in: tagIds } },
+        data: { use_count: { decrement: 1 } }
+      });
       // 使标签缓存失效
       invalidate('tags:*');
     }
