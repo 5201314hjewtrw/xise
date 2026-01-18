@@ -108,24 +108,24 @@ function calculatePopularityScore(post) {
  */
 async function getUserBehaviorData(userId) {
   const [likes, collections, history, following] = await Promise.all([
-    // 获取用户点赞的笔记
+    // 获取用户点赞的笔记（只选取必要字段）
     prisma.like.findMany({
       where: { user_id: userId, target_type: 1 },
-      select: { target_id: true, created_at: true },
+      select: { target_id: true },
       orderBy: { created_at: 'desc' },
       take: 100
     }),
-    // 获取用户收藏的笔记
+    // 获取用户收藏的笔记（只选取必要字段）
     prisma.collection.findMany({
       where: { user_id: userId },
-      select: { post_id: true, created_at: true },
+      select: { post_id: true },
       orderBy: { created_at: 'desc' },
       take: 100
     }),
-    // 获取用户浏览历史
+    // 获取用户浏览历史（只选取必要字段）
     prisma.browsingHistory.findMany({
       where: { user_id: userId },
-      select: { post_id: true, updated_at: true },
+      select: { post_id: true },
       orderBy: { updated_at: 'desc' },
       take: 100
     }),
@@ -348,8 +348,14 @@ async function getRecommendedPosts(options = {}) {
     type = null
   } = options;
 
+  // 候选池大小限制（避免全表扫描）
+  // 使用 limit * multiplier 作为候选池大小，确保有足够的候选进行评分和排序
+  const CANDIDATE_POOL_MULTIPLIER = 5;
+  const MAX_CANDIDATE_POOL = 500;
+  const candidatePoolSize = Math.min(page * limit * CANDIDATE_POOL_MULTIPLIER, MAX_CANDIDATE_POOL);
+
   debugLog.userId = userId ? Number(userId) : null;
-  addDebugPhase(debugLog, 'INIT', { options: { page, limit, type, excludePostIds: excludePostIds.length } });
+  addDebugPhase(debugLog, 'INIT', { options: { page, limit, type, excludePostIds: excludePostIds.length }, candidatePoolSize });
 
   try {
     let currentUserId = userId ? BigInt(userId) : null;
@@ -404,8 +410,13 @@ async function getRecommendedPosts(options = {}) {
 
     addDebugPhase(debugLog, 'QUERY_CONDITION', whereCondition);
 
-    // 获取所有符合条件的笔记，用于推荐算法排序
-    // 所有数据都使用推荐算法智能排序
+    // 获取总数（用于分页信息）
+    const totalCount = await prisma.post.count({ where: whereCondition });
+
+    // 优化：使用有限候选池策略
+    // 从数据库获取候选帖子时使用混合排序策略：
+    // 1. 优先获取热门帖子（按互动数据排序）
+    // 2. 限制候选池大小避免内存过载
     const candidatePosts = await prisma.post.findMany({
       where: whereCondition,
       include: {
@@ -416,14 +427,18 @@ async function getRecommendedPosts(options = {}) {
         tags: { include: { tag: { select: { id: true, name: true } } } },
         paymentSettings: true
       },
-      orderBy: { created_at: 'desc' }
+      orderBy: [
+        { like_count: 'desc' },
+        { collect_count: 'desc' },
+        { created_at: 'desc' }
+      ],
+      take: candidatePoolSize
     });
-
-    const totalCount = candidatePosts.length;
 
     addDebugPhase(debugLog, 'CANDIDATES_FETCHED', { 
       count: candidatePosts.length,
-      totalCount
+      totalCount,
+      candidatePoolSize
     });
     debugLog.statistics.totalCandidates = candidatePosts.length;
 
@@ -539,6 +554,11 @@ async function getHotPosts(options = {}) {
     type = null
   } = options;
 
+  // 候选池大小限制（避免全表扫描）
+  const CANDIDATE_POOL_MULTIPLIER = 5;
+  const MAX_CANDIDATE_POOL = 300;
+  const candidatePoolSize = Math.min(page * limit * CANDIDATE_POOL_MULTIPLIER, MAX_CANDIDATE_POOL);
+
   const whereCondition = {
     is_draft: false,
     visibility: 'public',
@@ -555,8 +575,10 @@ async function getHotPosts(options = {}) {
     whereCondition.type = parseInt(type);
   }
 
-  // 获取所有符合条件的笔记，用于热门算法排序
-  // 所有数据都使用热门算法智能排序
+  // 获取总数（用于分页信息）
+  const totalCount = await prisma.post.count({ where: whereCondition });
+
+  // 优化：限制候选池大小，使用数据库端排序获取热门候选
   const posts = await prisma.post.findMany({
     where: whereCondition,
     include: {
@@ -571,12 +593,11 @@ async function getHotPosts(options = {}) {
       { like_count: 'desc' },
       { collect_count: 'desc' },
       { comment_count: 'desc' }
-    ]
+    ],
+    take: candidatePoolSize
   });
 
-  const totalCount = posts.length;
-
-  // 计算综合热门分数（所有数据都使用热门算法智能排序）
+  // 计算综合热门分数（在有限候选池上计算）
   const scoredPosts = posts.map(post => ({
     post,
     hotScore: calculatePopularityScore(post) * calculateTimeDecay(post.created_at)
