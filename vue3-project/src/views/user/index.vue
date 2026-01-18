@@ -46,9 +46,9 @@ const loadToolbarItems = async () => {
     }
   } catch (error) {
     console.error('加载工具栏配置失败:', error)
-    // 如果加载失败，使用默认的浏览历史工具
+    // 如果加载失败，使用默认的浏览历史工具（使用负数ID避免与数据库ID冲突）
     toolbarItems.value = [
-      { id: 0, name: '浏览历史', icon: 'history', path: '/history' }
+      { id: -1, name: '浏览历史', icon: 'history', path: '/history' }
     ]
   }
 }

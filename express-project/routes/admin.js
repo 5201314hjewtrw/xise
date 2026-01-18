@@ -3597,7 +3597,7 @@ router.post('/toolbar-items', adminAuth, async (req, res) => {
         icon: icon.trim(),
         path: path.trim(),
         sort_order: sort_order !== undefined ? parseInt(sort_order) : 0,
-        enabled: enabled !== false
+        enabled: enabled === undefined ? true : Boolean(enabled)
       }
     })
 
