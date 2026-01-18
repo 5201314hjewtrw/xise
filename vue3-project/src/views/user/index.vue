@@ -6,6 +6,7 @@ import { useNavigationStore } from '@/stores/navigation'
 import { useUserStore } from '@/stores/user'
 import WaterfallFlow from '@/components/WaterfallFlow.vue'
 import SvgIcon from '@/components/SvgIcon.vue'
+import { Icon } from '@iconify/vue'
 import { eventBus, EVENT_TYPES } from '@/utils/eventBus.js'
 import EditProfileModal from './components/EditProfileModal.vue'
 import UserPersonalityTags from './components/UserPersonalityTags.vue'
@@ -65,12 +66,18 @@ const TOOLBAR_VISIBLE_COUNT = 4 // 默认显示的工具数量
 // 验证图标名称（只允许字母、数字、下划线和连字符）
 const isValidIconName = (icon) => {
   if (!icon || typeof icon !== 'string') return false
-  return /^[a-zA-Z0-9_-]+$/.test(icon)
+  // 支持传统图标名称和 Iconify 格式（如 mdi:home）
+  return /^[a-zA-Z0-9_-]+$/.test(icon) || /^[a-zA-Z0-9-]+:[a-zA-Z0-9_-]+$/.test(icon)
+}
+
+// 检查是否是 Iconify 图标格式
+const isIconifyIcon = (icon) => {
+  return icon && icon.includes(':')
 }
 
 // 安全的图标名称（防止XSS）
 const getSafeIcon = (icon) => {
-  return isValidIconName(icon) ? icon : 'setting'
+  return isValidIconName(icon) ? icon : 'mdi:cog'
 }
 
 // 获取可见的工具栏项（包含安全处理）
@@ -100,14 +107,14 @@ const loadToolbarItems = async () => {
     } else {
       // 没有配置或配置为空时使用默认工具栏项，确保用户始终有可用工具
       toolbarItems.value = [
-        { id: 0, name: '浏览历史', icon: 'history', url: '/history' }
+        { id: 0, name: '浏览历史', icon: 'mdi:history', url: '/history' }
       ]
     }
   } catch (error) {
     console.error('获取工具栏配置失败:', error)
     // API错误时使用默认工具栏项（浏览历史）
     toolbarItems.value = [
-      { id: 0, name: '浏览历史', icon: 'history', url: '/history' }
+      { id: 0, name: '浏览历史', icon: 'mdi:history', url: '/history' }
     ]
   }
 }
@@ -527,7 +534,8 @@ function handleCollect(data) {
               class="toolbar-item"
               @click="handleToolbarClick(item)"
             >
-              <SvgIcon :name="item.icon" width="18" height="18" />
+              <Icon v-if="isIconifyIcon(item.icon)" :icon="item.icon" width="18" height="18" />
+              <SvgIcon v-else :name="item.icon" width="18" height="18" />
               <span class="toolbar-item-text">{{ item.name }}</span>
             </div>
             <!-- 展开/收起按钮 -->

@@ -128,8 +128,9 @@
                 </span>
               </span>
               <span v-else-if="column.type === 'icon' && item[column.key]" class="icon-cell">
-                <SvgIcon :name="item[column.key]" width="18" height="18" />
-                <span class="icon-name">{{ item[column.key] }}</span>
+                <Icon v-if="item[column.key].includes(':')" :icon="item[column.key]" width="18" height="18" />
+                <SvgIcon v-else :name="item[column.key]" width="18" height="18" />
+                <span class="icon-name">{{ getIconDisplayName(item[column.key]) }}</span>
               </span>
               <span v-else-if="column.type === 'date'">
                 {{ formatDate(item[column.key]) }}
@@ -284,6 +285,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed, nextTick, onUnmounted, watch } from 'vue'
 import SvgIcon from '@/components/SvgIcon.vue'
+import { Icon } from '@iconify/vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import DetailModal from './DetailModal.vue'
 import FormModal from './FormModal.vue'
@@ -1183,6 +1185,13 @@ const closePersonalityTagsModal = () => {
 const formatDate = (dateString) => {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleString('zh-CN')
+}
+
+// 获取图标显示名称（处理 Iconify 格式）
+const getIconDisplayName = (iconName) => {
+  if (!iconName) return ''
+  const parts = iconName.split(':')
+  return parts.length > 1 ? parts[1] : iconName
 }
 
 // 格式化单元格值，处理对象类型
