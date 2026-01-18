@@ -138,6 +138,8 @@
               <VideoUpload :ref="el => setVideoUploadRef(field.key, el)" :model-value="formData[field.key]"
                 @update:model-value="handleVideoUploadChange" @error="handleVideoUploadError" @change="handleVideoChange" />
             </div>
+            <IconPicker v-else-if="field.type === 'icon-picker'" :model-value="formData[field.key] || ''"
+              @update:model-value="updateField(field.key, $event)" :placeholder="field.placeholder" />
 
           </div>
         </form>
@@ -181,6 +183,7 @@ import MbtiPicker from '@/components/MbtiPicker.vue'
 import EmojiPicker from '@/components/EmojiPicker.vue'
 import MentionModal from '@/components/mention/MentionModal.vue'
 import ContentEditableInput from '@/components/ContentEditableInput.vue'
+import IconPicker from '@/components/IconPicker.vue'
 import messageManager from '@/utils/messageManager'
 // 移除uploadApi导入，改用MultiImageUpload组件的uploadAllImages方法
 import { imageUploadApi } from '@/api/index.js'

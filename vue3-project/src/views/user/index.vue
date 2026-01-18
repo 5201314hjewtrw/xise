@@ -948,7 +948,8 @@ function handleCollect(data) {
 .user-toolbar {
   display: flex;
   flex-direction: column;
-  padding: 16px 16px 0;
+  padding: 20px 16px 8px;
+  margin-top: 8px;
   position: relative;
   z-index: 1;
 }
