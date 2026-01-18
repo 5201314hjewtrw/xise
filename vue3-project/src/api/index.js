@@ -504,6 +504,16 @@ export const adminApi = {
     return request.get(`/admin/users/${userId}`)
   },
 
+  // 获取用户石榴点余额
+  getUserPoints(userId) {
+    return request.get(`/admin/users/${userId}/points`)
+  },
+
+  // 调整用户石榴点余额
+  adjustUserPoints(userId, data) {
+    return request.post(`/admin/users/${userId}/adjust-points`, data)
+  },
+
   // ========== 笔记管理 ==========
   // 获取笔记列表
   getPosts(params = {}) {

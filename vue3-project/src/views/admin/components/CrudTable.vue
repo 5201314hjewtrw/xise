@@ -651,7 +651,9 @@ const refreshData = () => {
 
 // 暴露方法供父组件调用
 defineExpose({
-  refresh: refreshData
+  refreshData,
+  editItem,
+  deleteItem
 })
 
 // 监听 extraParams 变化

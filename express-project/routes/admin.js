@@ -1492,7 +1492,8 @@ router.get('/users', adminAuth, async (req, res) => {
         select: {
           id: true, user_id: true, nickname: true, avatar: true, bio: true,
           location: true, email: true, follow_count: true, fans_count: true,
-          like_count: true, is_active: true, created_at: true, verified: true
+          like_count: true, is_active: true, created_at: true, verified: true,
+          points: { select: { points: true } }
         },
         orderBy: { [sortField]: sortOrder.toLowerCase() },
         take: limit,
@@ -1500,7 +1501,11 @@ router.get('/users', adminAuth, async (req, res) => {
       })
     ])
 
-    const formattedUsers = users.map(u => ({ ...u, id: Number(u.id) }))
+    const formattedUsers = users.map(u => ({ 
+      ...u, 
+      id: Number(u.id),
+      points: u.points ? parseFloat(u.points.points) : 0
+    }))
 
     res.json({
       code: RESPONSE_CODES.SUCCESS,
@@ -1644,6 +1649,115 @@ router.delete('/users', adminAuth, async (req, res) => {
   } catch (error) {
     console.error('批量删除用户失败:', error)
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// 获取用户石榴点余额
+router.get('/users/:id/points', adminAuth, async (req, res) => {
+  try {
+    const userId = BigInt(req.params.id)
+    const userPoints = await prisma.userPoints.findUnique({
+      where: { user_id: userId }
+    })
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { points: userPoints ? parseFloat(userPoints.points) : 0 },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取用户余额失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+// 调整用户石榴点余额
+router.post('/users/:id/adjust-points', adminAuth, async (req, res) => {
+  try {
+    const userId = BigInt(req.params.id)
+    const { amount, reason } = req.body
+
+    if (amount === undefined || amount === null) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ 
+        code: RESPONSE_CODES.VALIDATION_ERROR, 
+        message: '请提供调整金额' 
+      })
+    }
+
+    const adjustAmount = parseFloat(amount)
+    if (isNaN(adjustAmount) || adjustAmount === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ 
+        code: RESPONSE_CODES.VALIDATION_ERROR, 
+        message: '调整金额必须是非零数值' 
+      })
+    }
+
+    // 检查用户是否存在
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ 
+        code: RESPONSE_CODES.NOT_FOUND, 
+        message: '用户不存在' 
+      })
+    }
+
+    // 获取或创建用户余额记录
+    let userPoints = await prisma.userPoints.findUnique({
+      where: { user_id: userId }
+    })
+
+    const currentPoints = userPoints ? parseFloat(userPoints.points) : 0
+    const newPoints = currentPoints + adjustAmount
+
+    // 检查余额是否会变成负数
+    if (newPoints < 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ 
+        code: RESPONSE_CODES.VALIDATION_ERROR, 
+        message: `余额不足，当前余额: ${currentPoints.toFixed(2)}，无法扣除: ${Math.abs(adjustAmount).toFixed(2)}` 
+      })
+    }
+
+    // 使用事务更新余额和记录日志
+    await prisma.$transaction(async (tx) => {
+      // 更新或创建余额记录
+      if (userPoints) {
+        await tx.userPoints.update({
+          where: { user_id: userId },
+          data: { points: newPoints }
+        })
+      } else {
+        await tx.userPoints.create({
+          data: {
+            user_id: userId,
+            points: newPoints
+          }
+        })
+      }
+
+      // 记录变动日志
+      await tx.pointsLog.create({
+        data: {
+          user_id: userId,
+          amount: adjustAmount,
+          balance_after: newPoints,
+          type: adjustAmount > 0 ? 'admin_add' : 'admin_deduct',
+          reason: reason || (adjustAmount > 0 ? '管理员充值' : '管理员扣除')
+        }
+      })
+    })
+
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      data: { 
+        previousPoints: currentPoints,
+        adjustAmount: adjustAmount,
+        newPoints: newPoints 
+      },
+      message: `余额调整成功，${adjustAmount > 0 ? '增加' : '扣除'} ${Math.abs(adjustAmount).toFixed(2)} 石榴点` 
+    })
+  } catch (error) {
+    console.error('调整用户余额失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '调整失败' })
   }
 })
 
