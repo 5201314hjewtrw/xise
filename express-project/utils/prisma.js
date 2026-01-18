@@ -7,7 +7,12 @@
  * Prisma 7.x requires driver adapters for database connections.
  * Using the legacy prisma-client-js provider for CommonJS compatibility.
  * 
- * Supports both PostgreSQL and MySQL databases based on DATABASE_URL.
+ * NOTE: The default schema uses PostgreSQL. For MySQL support, you need to:
+ * 1. Rename prisma/schema.mysql.prisma to prisma/schema.prisma
+ * 2. Update prisma.config.mjs to use the MySQL schema
+ * 3. In this file, replace "@prisma/adapter-pg" with "@prisma/adapter-mariadb"
+ *    and use "const { PrismaMariaDb } = require('@prisma/adapter-mariadb')"
+ * 4. Run `npx prisma generate` to regenerate the client
  */
 
 const { PrismaClient } = require('@prisma/client');
@@ -25,6 +30,11 @@ if (typeof BigInt.prototype.toJSON !== 'function') {
     }
     return this.toString();
   };
+}
+
+// Validate DATABASE_URL is defined
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL environment variable is required but not set');
 }
 
 // Create the PostgreSQL adapter with connection string
