@@ -11,6 +11,7 @@
     "preview": "vite build && vite preview --host"
   },
   "dependencies": {
+    "@iconify/vue": "^4.1.2",
     "@vueuse/core": "^13.5.0",
     "axios": "^1.11.0",
     "cropperjs": "^1.6.2",

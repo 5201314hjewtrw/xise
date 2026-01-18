@@ -1793,4 +1793,45 @@ router.get('/:id/stats', async (req, res) => {
   }
 });
 
+// 获取用户页面工具栏配置（公开接口）
+router.get('/toolbar/items', async (req, res) => {
+  try {
+    // 检查UserToolbar模型是否可用（数据库迁移后才能使用）
+    if (!prisma.userToolbar) {
+      // 模型不可用时返回空数组，前端会使用默认值
+      return res.json({
+        code: RESPONSE_CODES.SUCCESS,
+        message: 'success',
+        data: []
+      });
+    }
+
+    const toolbars = await prisma.userToolbar.findMany({
+      where: { is_active: true },
+      orderBy: { sort_order: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        icon: true,
+        url: true,
+        sort_order: true
+      }
+    });
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: 'success',
+      data: toolbars
+    });
+  } catch (error) {
+    console.error('获取工具栏配置失败:', error);
+    // 出错时也返回空数组，前端会使用默认值
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: 'success',
+      data: []
+    });
+  }
+});
+
 module.exports = router;

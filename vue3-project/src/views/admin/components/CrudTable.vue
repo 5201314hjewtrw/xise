@@ -127,6 +127,11 @@
                   {{ item.type === 2 ? '视频' : '图片' }}
                 </span>
               </span>
+              <span v-else-if="column.type === 'icon' && item[column.key]" class="icon-cell">
+                <Icon v-if="item[column.key].includes(':')" :icon="item[column.key]" width="18" height="18" />
+                <SvgIcon v-else :name="item[column.key]" width="18" height="18" />
+                <span class="icon-name">{{ getIconDisplayName(item[column.key]) }}</span>
+              </span>
               <span v-else-if="column.type === 'date'">
                 {{ formatDate(item[column.key]) }}
               </span>
@@ -280,6 +285,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed, nextTick, onUnmounted, watch } from 'vue'
 import SvgIcon from '@/components/SvgIcon.vue'
+import { Icon } from '@iconify/vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import DetailModal from './DetailModal.vue'
 import FormModal from './FormModal.vue'
@@ -1181,6 +1187,13 @@ const formatDate = (dateString) => {
   return new Date(dateString).toLocaleString('zh-CN')
 }
 
+// 获取图标显示名称（处理 Iconify 格式）
+const getIconDisplayName = (iconName) => {
+  if (!iconName) return ''
+  const parts = iconName.split(':')
+  return parts.length > 1 ? parts[1] : iconName
+}
+
 // 格式化单元格值，处理对象类型
 const formatCellValue = (value) => {
   if (value === null || value === undefined) return '-'
@@ -1568,6 +1581,18 @@ const handleCustomAction = (action, item) => {
 
 .table-image:hover {
   transform: scale(1.1);
+}
+
+.icon-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color-primary);
+}
+
+.icon-cell .icon-name {
+  font-size: 13px;
+  color: var(--text-color-secondary);
 }
 
 .pagination {
