@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNavigationStore } from '@/stores/navigation'
 import { useUserStore } from '@/stores/user'
@@ -13,6 +13,9 @@ const router = useRouter()
 const navigationStore = useNavigationStore()
 const userStore = useUserStore()
 const balanceStore = useBalanceStore()
+
+// 常量定义
+const PAGE_LIMIT = 10
 
 // Tab状态
 const activeTab = ref('balance') // 'balance', 'orders', 'transactions'
@@ -31,24 +34,30 @@ const messageType = ref('info')
 // 订单记录
 const orders = ref([])
 const ordersLoading = ref(false)
-const ordersPagination = ref({ page: 1, limit: 10, total: 0, totalPages: 0 })
+const ordersError = ref('')
+const ordersPagination = ref({ page: 1, limit: PAGE_LIMIT, total: 0, totalPages: 0 })
 
 // 交易记录
 const transactions = ref([])
 const transactionsLoading = ref(false)
-const transactionsPagination = ref({ page: 1, limit: 10, total: 0, totalPages: 0 })
+const transactionsError = ref('')
+const transactionsPagination = ref({ page: 1, limit: PAGE_LIMIT, total: 0, totalPages: 0 })
 
 // 加载订单记录
 const loadOrders = async (page = 1) => {
   ordersLoading.value = true
+  ordersError.value = ''
   try {
-    const response = await balanceApi.getOrders({ page, limit: 10 })
+    const response = await balanceApi.getOrders({ page, limit: PAGE_LIMIT })
     if (response.success) {
       orders.value = response.data.orders
       ordersPagination.value = response.data.pagination
+    } else {
+      ordersError.value = response.message || '加载订单失败'
     }
   } catch (error) {
     console.error('获取订单记录失败:', error)
+    ordersError.value = '网络错误，请稍后重试'
   } finally {
     ordersLoading.value = false
   }
@@ -57,14 +66,18 @@ const loadOrders = async (page = 1) => {
 // 加载交易记录
 const loadTransactions = async (page = 1) => {
   transactionsLoading.value = true
+  transactionsError.value = ''
   try {
-    const response = await balanceApi.getTransactions({ page, limit: 10 })
+    const response = await balanceApi.getTransactions({ page, limit: PAGE_LIMIT })
     if (response.success) {
       transactions.value = response.data.transactions
       transactionsPagination.value = response.data.pagination
+    } else {
+      transactionsError.value = response.message || '加载交易记录失败'
     }
   } catch (error) {
     console.error('获取交易记录失败:', error)
+    transactionsError.value = '网络错误，请稍后重试'
   } finally {
     transactionsLoading.value = false
   }
@@ -73,6 +86,9 @@ const loadTransactions = async (page = 1) => {
 // 处理兑换
 const handleExchange = async () => {
   if (!exchangeAmount.value || exchangeAmount.value <= 0) {
+    message.value = '请输入有效的金额'
+    messageType.value = 'error'
+    setTimeout(() => { message.value = '' }, 3000)
     return
   }
 
@@ -289,6 +305,12 @@ onMounted(async () => {
           <p>加载中...</p>
         </div>
 
+        <div v-else-if="ordersError" class="error-state">
+          <SvgIcon name="warning" width="48" height="48" class="error-icon" />
+          <p>{{ ordersError }}</p>
+          <button class="retry-btn" @click="loadOrders(ordersPagination.page)">重试</button>
+        </div>
+
         <div v-else-if="orders.length === 0" class="empty-state">
           <SvgIcon name="empty" width="64" height="64" class="empty-icon" />
           <h3>暂无订单</h3>
@@ -345,6 +367,12 @@ onMounted(async () => {
         <div v-if="transactionsLoading" class="loading-state">
           <SvgIcon name="loading" width="32" height="32" class="loading-icon" />
           <p>加载中...</p>
+        </div>
+
+        <div v-else-if="transactionsError" class="error-state">
+          <SvgIcon name="warning" width="48" height="48" class="error-icon" />
+          <p>{{ transactionsError }}</p>
+          <button class="retry-btn" @click="loadTransactions(transactionsPagination.page)">重试</button>
         </div>
 
         <div v-else-if="transactions.length === 0" class="empty-state">
@@ -896,7 +924,8 @@ onMounted(async () => {
 
 /* ---------- 9. 加载和空状态样式 ---------- */
 .loading-state,
-.empty-state {
+.empty-state,
+.error-state {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -920,6 +949,33 @@ onMounted(async () => {
 .empty-icon {
   color: var(--text-color-quaternary);
   margin-bottom: 16px;
+}
+
+.error-icon {
+  color: #ff9500;
+  margin-bottom: 16px;
+}
+
+.error-state p {
+  color: var(--text-color-secondary);
+  font-size: 14px;
+  margin: 0 0 16px 0;
+}
+
+.retry-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--primary-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--primary-color);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-btn:hover {
+  background: var(--primary-color);
+  color: white;
 }
 
 .empty-state h3 {
