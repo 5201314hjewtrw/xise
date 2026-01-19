@@ -31,7 +31,8 @@ let queueConfig = {
     ipLocation: parseInt(process.env.QUEUE_IP_LOCATION_CONCURRENCY) || 5,
     contentAudit: parseInt(process.env.QUEUE_CONTENT_AUDIT_CONCURRENCY) || 3,
     generalTask: parseInt(process.env.QUEUE_GENERAL_TASK_CONCURRENCY) || 5,
-    videoTranscoding: parseInt(process.env.QUEUE_VIDEO_TRANSCODING_CONCURRENCY) || 1
+    videoTranscoding: parseInt(process.env.QUEUE_VIDEO_TRANSCODING_CONCURRENCY) || 1,
+    batchUpload: parseInt(process.env.QUEUE_BATCH_UPLOAD_CONCURRENCY) || 2
   },
   // 重试配置
   retry: {
@@ -52,7 +53,8 @@ const QUEUE_NAMES = {
   AUDIT_LOG: 'audit-log',
   GENERAL_TASK: 'general-task',
   BROWSING_HISTORY: 'browsing-history',
-  VIDEO_TRANSCODING: 'video-transcoding'
+  VIDEO_TRANSCODING: 'video-transcoding',
+  BATCH_UPLOAD: 'batch-upload'
 };
 
 // 内容截断长度常量
@@ -468,6 +470,109 @@ async function initWorkers(connection) {
     { connection, concurrency: queueConfig.concurrency.videoTranscoding }
   );
 
+  // 批量上传 Worker
+  workers[QUEUE_NAMES.BATCH_UPLOAD] = new Worker(
+    QUEUE_NAMES.BATCH_UPLOAD,
+    async (job) => {
+      const { userId, notes, tags, isDraft, type, batchId } = job.data;
+      console.log(`🔄 处理批量上传任务 - 用户: ${userId}, 笔记数: ${notes.length}, 批次ID: ${batchId}`);
+      
+      try {
+        const { prisma } = require('../config/config');
+        const config = require('../config/config');
+        
+        const createdPosts = [];
+        const failedNotes = [];
+        const totalNotes = notes.length;
+        
+        for (let i = 0; i < notes.length; i++) {
+          const note = notes[i];
+          
+          try {
+            // 更新进度
+            const progress = Math.round(((i + 1) / totalNotes) * 100);
+            await job.updateProgress(progress);
+            console.log(`⏳ 批量上传任务 [ID: ${job.id}] 进度: ${progress}% (${i + 1}/${totalNotes})`);
+            
+            // 创建笔记
+            const post = await prisma.post.create({
+              data: {
+                user_id: BigInt(userId),
+                title: note.title || '',
+                content: note.content || '',
+                type: type || 1,
+                is_draft: isDraft !== undefined ? Boolean(isDraft) : false
+              }
+            });
+            
+            // 添加图片（图文笔记）
+            if (type === 1 && note.imageUrls && note.imageUrls.length > 0) {
+              await prisma.postImage.createMany({
+                data: note.imageUrls.map(url => ({
+                  post_id: post.id,
+                  image_url: url
+                }))
+              });
+            }
+            
+            // 添加视频（视频笔记）
+            if (type === 2 && note.videoUrl) {
+              await prisma.postVideo.create({
+                data: {
+                  post_id: post.id,
+                  video_url: note.videoUrl,
+                  cover_url: note.coverUrl || ''
+                }
+              });
+            }
+            
+            // 添加标签
+            if (tags && tags.length > 0) {
+              for (const tag of tags) {
+                let tagId;
+                let tagName = typeof tag === 'string' ? tag : tag.name;
+                
+                const existingTag = await prisma.tag.findUnique({ where: { name: tagName } });
+                if (existingTag) {
+                  tagId = existingTag.id;
+                } else {
+                  const newTag = await prisma.tag.create({ data: { name: tagName } });
+                  tagId = newTag.id;
+                }
+                
+                await prisma.postTag.create({ data: { post_id: post.id, tag_id: tagId } });
+                await prisma.tag.update({ where: { id: tagId }, data: { use_count: { increment: 1 } } });
+              }
+            }
+            
+            createdPosts.push({ id: Number(post.id), index: i });
+            console.log(`✅ 笔记 ${i + 1}/${totalNotes} 创建成功 - ID: ${post.id}`);
+          } catch (noteError) {
+            console.error(`❌ 笔记 ${i + 1}/${totalNotes} 创建失败:`, noteError.message);
+            failedNotes.push({ index: i, error: noteError.message });
+          }
+        }
+        
+        const result = {
+          success: failedNotes.length === 0,
+          batchId,
+          totalNotes,
+          successCount: createdPosts.length,
+          failCount: failedNotes.length,
+          createdPosts,
+          failedNotes
+        };
+        
+        console.log(`✅ 批量上传任务完成 [ID: ${job.id}] - 成功: ${createdPosts.length}, 失败: ${failedNotes.length}`);
+        return result;
+      } catch (error) {
+        console.error(`❌ 批量上传任务失败 - 用户: ${userId}`, error.message);
+        throw error;
+      }
+    },
+    { connection, concurrency: queueConfig.concurrency.batchUpload }
+  );
+
   console.log('● 队列 Workers 初始化完成');
 }
 
@@ -602,6 +707,54 @@ async function addGeneralTask(taskType, data = {}) {
     return job;
   } catch (error) {
     console.error('添加通用任务失败:', error.message);
+    return null;
+  }
+}
+
+/**
+ * 添加批量上传笔记任务到队列
+ * @param {number|string} userId - 用户 ID
+ * @param {Array} notes - 笔记数组，每个笔记包含 title, content, imageUrls 或 videoUrl, coverUrl
+ * @param {Array} tags - 标签数组
+ * @param {boolean} isDraft - 是否草稿
+ * @param {number} type - 笔记类型 (1: 图文, 2: 视频)
+ * @param {string} batchId - 批次ID (用于前端追踪)
+ * @returns {Object|null} - 返回任务对象或null
+ */
+async function addBatchUploadTask(userId, notes, tags = [], isDraft = false, type = 1, batchId = null) {
+  if (!queueConfig.enabled || !isInitialized) {
+    // 如果队列未启用，返回null，调用方应该同步处理
+    console.log('⚠️ 队列服务未启用，批量上传将使用同步处理');
+    return null;
+  }
+
+  if (!notes || !Array.isArray(notes) || notes.length === 0) {
+    console.error('批量上传任务失败: 没有提供笔记');
+    return null;
+  }
+
+  try {
+    const queue = queues[QUEUE_NAMES.BATCH_UPLOAD];
+    const finalBatchId = batchId || `batch_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    
+    const job = await queue.add('batch-create-notes', {
+      userId: String(userId),
+      notes,
+      tags,
+      isDraft,
+      type,
+      batchId: finalBatchId
+    }, {
+      attempts: queueConfig.retry.attempts,
+      backoff: { type: 'exponential', delay: queueConfig.retry.backoffDelay * 2 },
+      removeOnComplete: 100,
+      removeOnFail: 50
+    });
+    
+    console.log(`📝 批量上传任务已加入队列 - 用户: ${userId}, 笔记数: ${notes.length}, 任务 ID: ${job.id}, 批次 ID: ${finalBatchId}`);
+    return { job, batchId: finalBatchId };
+  } catch (error) {
+    console.error('添加批量上传任务失败:', error.message);
     return null;
   }
 }
@@ -1019,6 +1172,7 @@ module.exports = {
   addAuditLogTask,
   addGeneralTask,
   addVideoTranscodingTask,
+  addBatchUploadTask,
   addBrowsingHistoryTask,
   cleanupExpiredBrowsingHistory,
   getQueueStats,

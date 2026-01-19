@@ -844,6 +844,22 @@ export const adminApi = {
     return request.delete(`/admin/queues/${queueName}`)
   },
 
+  // ========== 批量上传队列 ==========
+  // 提交批量上传任务到队列
+  submitBatchUploadToQueue(data) {
+    return request.post('/admin/batch-upload/queue', data)
+  },
+
+  // 获取批量上传任务状态
+  getBatchUploadTaskStatus(jobId) {
+    return request.get(`/admin/batch-upload/queue/${jobId}`)
+  },
+
+  // 获取所有批量上传队列任务
+  getBatchUploadQueueTasks(params = {}) {
+    return request.get('/admin/batch-upload/queue', { params })
+  },
+
   // ========== 系统通知管理 ==========
   // 获取系统通知列表
   getSystemNotifications(params = {}) {

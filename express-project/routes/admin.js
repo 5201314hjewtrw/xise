@@ -3262,6 +3262,125 @@ router.delete('/batch-upload/files', adminAuth, async (req, res) => {
   }
 })
 
+// 批量上传任务提交到队列（异步处理）
+router.post('/batch-upload/queue', adminAuth, async (req, res) => {
+  try {
+    const { user_id, notes, tags, is_draft, type, batch_id } = req.body
+    
+    if (!user_id) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '缺少用户ID' })
+    }
+    
+    if (!notes || !Array.isArray(notes) || notes.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '没有提供笔记数据' })
+    }
+    
+    // 验证用户存在
+    const user = await prisma.user.findUnique({ where: { id: BigInt(user_id) } })
+    if (!user) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '用户不存在' })
+    }
+    
+    // 检查队列是否启用
+    const { addBatchUploadTask } = require('../utils/queueService')
+    
+    const result = await addBatchUploadTask(
+      user_id,
+      notes,
+      tags || [],
+      is_draft !== undefined ? Boolean(is_draft) : false,
+      type || 1,
+      batch_id
+    )
+    
+    if (result && result.job) {
+      res.json({
+        code: RESPONSE_CODES.SUCCESS,
+        data: {
+          jobId: result.job.id,
+          batchId: result.batchId,
+          notesCount: notes.length,
+          status: 'queued'
+        },
+        message: `批量上传任务已加入队列，共 ${notes.length} 条笔记`
+      })
+    } else {
+      // 队列未启用，返回提示信息
+      res.status(HTTP_STATUS.SERVICE_UNAVAILABLE).json({
+        code: RESPONSE_CODES.ERROR,
+        message: '异步队列服务未启用，请使用同步上传接口或启用队列服务 (QUEUE_ENABLED=true)',
+        data: { queueEnabled: false }
+      })
+    }
+  } catch (error) {
+    console.error('添加批量上传任务失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '添加批量上传任务失败' })
+  }
+})
+
+// 获取批量上传任务状态
+router.get('/batch-upload/queue/:jobId', adminAuth, async (req, res) => {
+  try {
+    const { jobId } = req.params
+    
+    const { getJobDetails, QUEUE_NAMES } = require('../utils/queueService')
+    const result = await getJobDetails(QUEUE_NAMES.BATCH_UPLOAD, jobId)
+    
+    if (!result.enabled) {
+      return res.status(HTTP_STATUS.SERVICE_UNAVAILABLE).json({
+        code: RESPONSE_CODES.ERROR,
+        message: '队列服务未启用'
+      })
+    }
+    
+    if (result.error) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        code: RESPONSE_CODES.NOT_FOUND,
+        message: result.error
+      })
+    }
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: result.job,
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取批量上传任务状态失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取任务状态失败' })
+  }
+})
+
+// 获取所有批量上传队列任务
+router.get('/batch-upload/queue', adminAuth, async (req, res) => {
+  try {
+    const { status = 'waiting', start = 0, end = 50 } = req.query
+    
+    const { getQueueJobs, QUEUE_NAMES } = require('../utils/queueService')
+    const result = await getQueueJobs(QUEUE_NAMES.BATCH_UPLOAD, status, parseInt(start), parseInt(end))
+    
+    if (!result.enabled) {
+      return res.json({
+        code: RESPONSE_CODES.SUCCESS,
+        data: { jobs: [], queueEnabled: false },
+        message: '队列服务未启用'
+      })
+    }
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        jobs: result.jobs,
+        queueEnabled: true
+      },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取批量上传队列任务失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取队列任务失败' })
+  }
+})
+
 // ===================== 系统通知管理 =====================
 
 // 系统通知类型映射

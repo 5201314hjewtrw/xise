@@ -45,6 +45,90 @@
         </label>
       </div>
 
+      <!-- Upload mode selector -->
+      <div class="form-section">
+        <label class="form-label">上传模式</label>
+        <div class="mode-selector">
+          <button :class="['mode-btn', { active: uploadMode === 'sync' }]" @click="uploadMode = 'sync'">
+            <SvgIcon name="loading" width="16" height="16" />
+            同步模式
+          </button>
+          <button :class="['mode-btn', { active: uploadMode === 'async' }]" @click="uploadMode = 'async'">
+            <SvgIcon name="check" width="16" height="16" />
+            异步队列模式
+          </button>
+        </div>
+        <p class="form-hint" v-if="uploadMode === 'sync'">
+          同步模式：所有笔记将在当前页面创建，刷新页面可能导致上传丢失
+        </p>
+        <p class="form-hint" v-else>
+          异步队列模式：笔记将添加到后台队列处理，刷新页面不会丢失任务
+          <span v-if="queueStore.queueServiceEnabled === false" class="mode-warning">
+            （⚠️ 队列服务未启用）
+          </span>
+        </p>
+      </div>
+
+      <!-- Queue status panel -->
+      <div v-if="queueStore.tasks.length > 0" class="form-section queue-status-panel">
+        <div class="queue-status-header">
+          <label class="form-label">队列任务状态</label>
+          <div class="queue-actions">
+            <button 
+              v-if="queueStore.hasPendingTasks" 
+              class="btn btn-small btn-primary" 
+              @click="queueStore.processAllPendingTasks()"
+              :disabled="queueStore.isProcessing"
+            >
+              处理待执行任务
+            </button>
+            <button 
+              v-if="queueStore.completedTasks.length > 0" 
+              class="btn btn-small" 
+              @click="queueStore.clearCompletedTasks()"
+            >
+              清除已完成
+            </button>
+          </div>
+        </div>
+        <div class="queue-task-list">
+          <div 
+            v-for="task in queueStore.tasks" 
+            :key="task.id" 
+            :class="['queue-task-item', `status-${task.status}`]"
+          >
+            <div class="task-info">
+              <span class="task-type">{{ task.type === 1 ? '图文' : '视频' }}</span>
+              <span class="task-count">{{ task.notes.length }}条笔记</span>
+              <span class="task-status">{{ getTaskStatusText(task.status) }}</span>
+              <span v-if="task.progress > 0 && task.status !== 'completed'" class="task-progress">
+                {{ task.progress }}%
+              </span>
+            </div>
+            <div class="task-actions">
+              <button 
+                v-if="task.status === 'failed'" 
+                class="btn btn-small" 
+                @click="queueStore.retryTask(task.id)"
+                :disabled="task.retryCount >= task.maxRetries"
+              >
+                重试 ({{ task.retryCount }}/{{ task.maxRetries }})
+              </button>
+              <button 
+                v-if="['completed', 'failed'].includes(task.status)" 
+                class="btn btn-small btn-danger" 
+                @click="queueStore.removeTask(task.id)"
+              >
+                删除
+              </button>
+            </div>
+            <div v-if="task.error" class="task-error">
+              {{ task.error }}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Server files section -->
       <div class="form-section">
         <div class="server-files-header">
@@ -199,12 +283,16 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted, watch } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue'
 import SvgIcon from '@/components/SvgIcon.vue'
 import TagSelector from '@/components/TagSelector.vue'
 import messageManager from '@/utils/messageManager'
 import apiConfig from '@/config/api.js'
 import { generateVideoThumbnail, blobToFile, generateThumbnailFilename } from '@/utils/videoThumbnail.js'
+import { useBatchUploadQueueStore } from '@/stores/batchUploadQueue.js'
+
+// 初始化队列 Store
+const queueStore = useBatchUploadQueueStore()
 
 const formData = reactive({
   user_id: null,
@@ -213,6 +301,9 @@ const formData = reactive({
   tags: [],
   is_draft: false
 })
+
+// 上传模式：sync（同步）或 async（异步队列）
+const uploadMode = ref('sync')
 
 const serverImages = ref([])
 const serverVideos = ref([])
@@ -527,14 +618,28 @@ const getVideoThumbnail = (file) => {
 // Get submit button text
 const getSubmitButtonText = () => {
   if (isSubmitting.value) {
-    return '创建中...'
+    return uploadMode.value === 'async' ? '添加到队列中...' : '创建中...'
   }
   
   if (notePreviews.value.length === 0) {
     return '请先生成笔记预览'
   }
   
-  return `创建 ${notePreviews.value.length} 条笔记`
+  const modeText = uploadMode.value === 'async' ? '添加到队列' : '创建'
+  return `${modeText} ${notePreviews.value.length} 条笔记`
+}
+
+// Get task status text
+const getTaskStatusText = (status) => {
+  const statusMap = {
+    pending: '等待处理',
+    uploading: '上传中',
+    queued: '已入队',
+    processing: '处理中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  return statusMap[status] || status
 }
 
 // Reset form
@@ -623,10 +728,17 @@ const uploadFile = async (file, isVideo = false) => {
   throw new Error(result.message || '文件上传失败')
 }
 
-// Handle batch create
+// Handle batch create - supports both sync and async modes
 const handleBatchCreate = async () => {
   if (!canSubmit.value || isSubmitting.value) return
 
+  // Check if using async queue mode
+  if (uploadMode.value === 'async') {
+    await handleAsyncBatchCreate()
+    return
+  }
+
+  // Sync mode - original implementation
   isSubmitting.value = true
   progressPercent.value = 0
   
@@ -731,9 +843,145 @@ const handleBatchCreate = async () => {
   }
 }
 
+// Handle async batch create - add to queue and process asynchronously
+const handleAsyncBatchCreate = async () => {
+  isSubmitting.value = true
+  progressText.value = '准备上传文件...'
+  progressPercent.value = 0
+  
+  const totalNotes = notePreviews.value.length
+  const config = await getBaseUrl()
+  
+  try {
+    // Step 1: Upload all files first and collect URLs
+    const notesWithUrls = []
+    
+    for (let i = 0; i < notePreviews.value.length; i++) {
+      const note = notePreviews.value[i]
+      progressText.value = `正在上传文件 ${i + 1}/${totalNotes}...`
+      
+      try {
+        const noteData = {
+          title: note.title || '',
+          content: note.content || ''
+        }
+        
+        if (formData.type === 1) {
+          // Image note - upload all images
+          const imageUrls = []
+          for (const file of note.files) {
+            const url = await uploadFile(file, false)
+            imageUrls.push(url)
+          }
+          noteData.imageUrls = imageUrls
+        } else {
+          // Video note - upload video
+          for (const file of note.files) {
+            const result = await uploadFile(file, true)
+            noteData.videoUrl = result.url
+            noteData.coverUrl = result.coverUrl
+          }
+        }
+        
+        notesWithUrls.push(noteData)
+        progressPercent.value = Math.round(((i + 1) / totalNotes) * 80)
+      } catch (error) {
+        console.error(`笔记 ${i + 1} 文件上传失败:`, error)
+        messageManager.error(`笔记 ${i + 1} 文件上传失败: ${error.message}`)
+        notesWithUrls.push({
+          title: note.title || '',
+          content: note.content || '',
+          uploadError: error.message
+        })
+      }
+    }
+    
+    // Filter out notes with upload errors
+    const validNotes = notesWithUrls.filter(n => !n.uploadError)
+    
+    if (validNotes.length === 0) {
+      messageManager.error('所有文件上传失败，无法添加到队列')
+      return
+    }
+    
+    progressText.value = '正在添加到处理队列...'
+    progressPercent.value = 90
+    
+    // Step 2: Add to queue store
+    const taskId = queueStore.addTask({
+      userId: formData.user_id,
+      type: formData.type,
+      isDraft: formData.is_draft,
+      tags: formData.tags,
+      notes: validNotes
+    })
+    
+    progressPercent.value = 95
+    
+    // Step 3: Submit to backend queue
+    const result = await queueStore.processTask(taskId)
+    
+    if (result.success) {
+      messageManager.success(`已将 ${validNotes.length} 条笔记添加到处理队列，任务ID: ${result.jobId}`)
+      queueStore.startPolling()
+      
+      // Add to history
+      uploadHistory.value.unshift({
+        type: formData.type,
+        count: validNotes.length,
+        success: true,
+        time: new Date(),
+        async: true,
+        taskId
+      })
+      
+      // Reset form
+      selectedFiles.value = []
+      notePreviews.value = []
+      await fetchServerFiles()
+    } else {
+      // Queue service might not be available - fall back or show error
+      if (result.error && result.error.includes('队列服务未启用')) {
+        messageManager.warning('异步队列服务未启用，任务将保存在本地等待处理')
+      } else {
+        messageManager.error(`添加队列失败: ${result.error}`)
+      }
+    }
+    
+    progressPercent.value = 100
+  } catch (error) {
+    console.error('异步批量创建失败:', error)
+    messageManager.error(error.message || '异步批量创建失败')
+  } finally {
+    isSubmitting.value = false
+    progressText.value = ''
+  }
+}
+
+// Get base URL from config
+const getBaseUrl = async () => {
+  try {
+    const response = await fetch(`${apiConfig.baseURL}/admin/batch-upload/files`, {
+      headers: getAuthHeaders()
+    })
+    return response.ok ? apiConfig.baseURL : null
+  } catch {
+    return null
+  }
+}
+
 // Fetch files on mount
 onMounted(() => {
   fetchServerFiles()
+  // Initialize the queue store
+  queueStore.initialize()
+  // Check if queue service is available
+  queueStore.checkQueueService()
+})
+
+// Cleanup on unmount
+onUnmounted(() => {
+  queueStore.stopPolling()
 })
 
 // Watch type change to clear selection
@@ -1358,5 +1606,160 @@ watch(() => formData.type, () => {
   .header-buttons .btn {
     flex: 1;
   }
+  
+  .mode-selector {
+    flex-direction: column;
+  }
+}
+
+/* Upload mode selector styles */
+.mode-selector {
+  display: flex;
+  gap: 12px;
+}
+
+.mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-color-primary);
+  border-radius: 8px;
+  background: var(--bg-color-primary);
+  color: var(--text-color-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.mode-btn.active {
+  border-color: var(--primary-color);
+  background: var(--primary-color-light, rgba(255, 80, 121, 0.1));
+  color: var(--primary-color);
+}
+
+.mode-warning {
+  color: #e6a23c;
+  font-weight: 500;
+}
+
+/* Queue status panel styles */
+.queue-status-panel {
+  background: var(--bg-color-secondary);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.queue-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.queue-status-header .form-label {
+  margin-bottom: 0;
+}
+
+.queue-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.queue-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-task-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--bg-color-primary);
+  border-left: 3px solid var(--border-color-primary);
+}
+
+.queue-task-item.status-pending {
+  border-left-color: #909399;
+}
+
+.queue-task-item.status-uploading,
+.queue-task-item.status-processing {
+  border-left-color: #409eff;
+}
+
+.queue-task-item.status-queued {
+  border-left-color: #e6a23c;
+}
+
+.queue-task-item.status-completed {
+  border-left-color: #67c23a;
+}
+
+.queue-task-item.status-failed {
+  border-left-color: #f56c6c;
+}
+
+.task-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.task-type {
+  padding: 2px 8px;
+  background: var(--bg-color-tertiary);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-color-secondary);
+}
+
+.task-count {
+  font-size: 14px;
+  color: var(--text-color-primary);
+}
+
+.task-status {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+}
+
+.task-progress {
+  font-size: 12px;
+  color: var(--primary-color);
+  font-weight: 500;
+}
+
+.task-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.task-error {
+  font-size: 12px;
+  color: #f56c6c;
+  background: rgba(245, 108, 108, 0.1);
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.btn-danger {
+  background-color: #f56c6c;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #f44336;
 }
 </style>
