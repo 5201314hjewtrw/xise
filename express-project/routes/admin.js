@@ -3281,7 +3281,7 @@ router.post('/batch-upload/async-create', adminAuth, async (req, res) => {
     }
     
     const postType = parseInt(type) || 1
-    const { addBatchNoteCreateTask, isQueueEnabled } = require('../utils/queueService')
+    const { addBatchNoteCreateTask } = require('../utils/queueService')
     
     // 尝试使用队列进行异步处理
     const queueResult = await addBatchNoteCreateTask(notes, user_id, postType, tags || [], is_draft || false)

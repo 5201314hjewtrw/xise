@@ -660,16 +660,6 @@ const handleBatchCreate = async () => {
         coverUrl: ''
       }
       
-      // For video notes, include the generated thumbnail if available
-      if (formData.type === 2 && note.files.length > 0) {
-        const file = note.files[0]
-        const thumbnail = videoThumbnails.value[file.path]
-        if (thumbnail) {
-          // We'll let the backend generate server-side thumbnails
-          // The frontend thumbnail is just for preview
-        }
-      }
-      
       notesData.push(noteData)
     }
 
@@ -756,10 +746,12 @@ const handleBatchCreate = async () => {
   }
 }
 
-// Poll for batch creation status
+// Poll for batch creation status with exponential backoff
 const pollBatchStatus = async (batchId) => {
-  const maxPolls = 60 // Max 60 polls (5 minutes with 5s interval)
+  const maxPolls = 30 // Max 30 polls
   let pollCount = 0
+  let pollInterval = 2000 // Start with 2 seconds
+  const maxInterval = 30000 // Max 30 seconds between polls
   
   const poll = async () => {
     try {
@@ -793,15 +785,29 @@ const pollBatchStatus = async (batchId) => {
             }
             return // Stop polling
           }
+          
+          // If there's activity, use shorter interval
+          if (status.active > 0) {
+            pollInterval = 3000 // 3 seconds when actively processing
+          } else {
+            // Exponential backoff when waiting
+            pollInterval = Math.min(pollInterval * 1.5, maxInterval)
+          }
         }
         
         pollCount++
         if (pollCount < maxPolls) {
-          setTimeout(poll, 5000) // Poll every 5 seconds
+          setTimeout(poll, pollInterval)
         }
       }
     } catch (error) {
       console.error('查询批量创建状态失败:', error)
+      // On error, increase interval
+      pollInterval = Math.min(pollInterval * 2, maxInterval)
+      pollCount++
+      if (pollCount < maxPolls) {
+        setTimeout(poll, pollInterval)
+      }
     }
   }
   
