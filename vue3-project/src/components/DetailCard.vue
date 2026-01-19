@@ -5011,14 +5011,12 @@ function handleAvatarError(event) {
 
   /* 移动端视频容器样式 */
   .mobile-video-container {
-    --mobile-video-max-height: 50vh;
     display: flex;
     width: 100%;
-    /* Use aspect-ratio based height for better video sizing */
-    /* For landscape videos: max-height prevents excessive enlargement */
-    /* For portrait videos: container adapts to content */
-    min-height: 200px;
-    max-height: var(--mobile-video-max-height);
+    /* Use aspect-ratio for proper video sizing on mobile */
+    /* Videos will maintain their natural aspect ratio up to max-height */
+    aspect-ratio: 16 / 9;
+    max-height: 50vh;
     margin-bottom: 16px;
     position: relative;
     background: var(--bg-color-secondary);
@@ -5030,7 +5028,6 @@ function handleAvatarError(event) {
   .mobile-video-player {
     width: 100%;
     height: 100%;
-    max-height: var(--mobile-video-max-height);
     object-fit: contain;
     background: #000;
   }
