@@ -72,9 +72,10 @@
 
         <div v-else class="file-list">
           <div class="file-list-header">
-            <label class="checkbox-label">
+            <label class="checkbox-label" :title="hasMoreFiles ? '选中所有文件（包括未显示的）' : ''">
               <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
               全选 ({{ selectedFiles.length }}/{{ allFiles.length }})
+              <span v-if="hasMoreFiles" class="select-all-note">含未显示</span>
             </label>
             <span class="file-count">
               {{ formData.type === 1 
@@ -951,6 +952,12 @@ watch(() => formData.type, () => {
 .file-count {
   font-size: 14px;
   color: var(--text-color-secondary);
+}
+
+.select-all-note {
+  font-size: 11px;
+  color: var(--text-color-tertiary);
+  margin-left: 4px;
 }
 
 .file-grid {
