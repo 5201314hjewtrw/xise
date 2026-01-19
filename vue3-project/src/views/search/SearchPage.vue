@@ -3,12 +3,10 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import SvgIcon from '@/components/SvgIcon.vue'
 import { useSearchHistoryStore } from '@/stores/searchHistory'
-import { useNavigationStore } from '@/stores/navigation'
 import apiConfig from '@/config/api.js'
 
 const router = useRouter()
 const searchHistoryStore = useSearchHistoryStore()
-const navigationStore = useNavigationStore()
 
 const searchText = ref('')
 const searchInputRef = ref(null)
@@ -23,14 +21,17 @@ const recentSearches = computed(() => searchHistoryStore.getRecentSearches())
 function handleSearch(keyword = null) {
   const searchKeyword = (typeof keyword === 'string' ? keyword : searchText.value).trim()
   
-  if (searchKeyword) {
-    searchHistoryStore.addSearchRecord(searchKeyword)
+  // 如果没有搜索关键词，不执行搜索
+  if (!searchKeyword) {
+    return
   }
+  
+  searchHistoryStore.addSearchRecord(searchKeyword)
   
   router.push({
     name: 'search_result_tab',
     params: { tab: 'all' },
-    query: searchKeyword ? { keyword: searchKeyword } : {}
+    query: { keyword: searchKeyword }
   })
 }
 
@@ -92,12 +93,17 @@ async function fetchHotSearches() {
   isLoadingHot.value = true
   try {
     const response = await fetch(`${apiConfig.baseURL}/tags/hot?limit=10`)
+    if (!response.ok) {
+      // 服务器返回错误状态码，静默失败
+      return
+    }
     const data = await response.json()
-    if (data.code === 200 && data.data) {
+    if (data.code === 200 && Array.isArray(data.data)) {
       hotSearches.value = data.data.map(tag => tag.name)
     }
   } catch (error) {
-    console.error('获取热门搜索失败:', error)
+    // 网络错误或解析错误，静默失败，热门搜索为可选功能
+    console.warn('获取热门搜索失败:', error.message)
   } finally {
     isLoadingHot.value = false
   }
