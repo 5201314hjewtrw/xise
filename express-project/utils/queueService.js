@@ -713,13 +713,28 @@ async function addGeneralTask(taskType, data = {}) {
 
 /**
  * 添加批量上传笔记任务到队列
- * @param {number|string} userId - 用户 ID
- * @param {Array} notes - 笔记数组，每个笔记包含 title, content, imageUrls 或 videoUrl, coverUrl
- * @param {Array} tags - 标签数组
- * @param {boolean} isDraft - 是否草稿
- * @param {number} type - 笔记类型 (1: 图文, 2: 视频)
- * @param {string} batchId - 批次ID (用于前端追踪)
- * @returns {Object|null} - 返回任务对象或null
+ * 
+ * 该函数将批量创建笔记的任务添加到 Redis 队列中异步处理。
+ * 如果队列服务未启用或 notes 参数无效，将返回 null。
+ * 
+ * @param {number|string} userId - 用户 ID（必填）
+ * @param {Array<Object>} notes - 笔记数组（必填，不能为空）
+ *   对于图文笔记 (type=1)，每个笔记对象应包含：
+ *   - {string} title - 笔记标题
+ *   - {string} content - 笔记内容
+ *   - {Array<string>} imageUrls - 图片URL数组
+ *   对于视频笔记 (type=2)，每个笔记对象应包含：
+ *   - {string} title - 笔记标题
+ *   - {string} content - 笔记内容
+ *   - {string} videoUrl - 视频URL
+ *   - {string} [coverUrl] - 视频封面URL（可选）
+ * @param {Array<string|Object>} tags - 标签数组，可以是标签名字符串或 {name: string} 对象（默认：[]）
+ * @param {boolean} isDraft - 是否保存为草稿（默认：false）
+ * @param {number} type - 笔记类型，1=图文笔记，2=视频笔记（默认：1）
+ * @param {string} [batchId] - 批次ID，用于前端追踪。如果不提供，将自动生成
+ * @returns {Promise<{job: Object, batchId: string}|null>} 
+ *   成功时返回包含 job（BullMQ Job实例）和 batchId 的对象
+ *   队列未启用或参数无效时返回 null
  */
 async function addBatchUploadTask(userId, notes, tags = [], isDraft = false, type = 1, batchId = null) {
   if (!queueConfig.enabled || !isInitialized) {

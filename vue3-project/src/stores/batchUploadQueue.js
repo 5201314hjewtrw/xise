@@ -173,6 +173,20 @@ export const useBatchUploadQueueStore = defineStore('batchUploadQueue', () => {
       const response = await fetch(`${apiConfig.baseURL}/admin/queue-names`, {
         headers: getAuthHeaders()
       })
+      
+      // Handle authentication errors (401, 403)
+      if (response.status === 401 || response.status === 403) {
+        console.warn('检查队列服务状态失败: 认证失败')
+        // Don't update queueServiceEnabled on auth errors - it may still be available
+        return null
+      }
+      
+      if (!response.ok) {
+        console.warn('检查队列服务状态失败: HTTP', response.status)
+        queueServiceEnabled.value = false
+        return false
+      }
+      
       const result = await response.json()
       queueServiceEnabled.value = result.code === 200 && result.data?.enabled === true
       return queueServiceEnabled.value

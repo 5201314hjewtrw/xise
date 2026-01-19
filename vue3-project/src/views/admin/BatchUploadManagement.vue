@@ -887,13 +887,21 @@ const handleAsyncBatchCreate = async () => {
         progressPercent.value = Math.round(((i + 1) / totalNotes) * 80)
       } catch (error) {
         console.error(`笔记 ${i + 1} 文件上传失败:`, error)
-        messageManager.error(`笔记 ${i + 1} 文件上传失败: ${error.message}`)
+        const errorMsg = error.message || '未知错误'
+        messageManager.error(`笔记 ${i + 1} 文件上传失败: ${errorMsg}`)
         notesWithUrls.push({
           title: note.title || '',
           content: note.content || '',
-          uploadError: error.message
+          uploadError: errorMsg,
+          noteIndex: i + 1  // Track which note failed for display
         })
       }
+    }
+    
+    // Count failed uploads and show summary
+    const failedUploads = notesWithUrls.filter(n => n.uploadError)
+    if (failedUploads.length > 0 && failedUploads.length < totalNotes) {
+      messageManager.warning(`${failedUploads.length} 条笔记文件上传失败，将仅处理成功上传的笔记`)
     }
     
     // Filter out notes with upload errors
