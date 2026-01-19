@@ -3330,13 +3330,14 @@ router.post('/batch-upload/async-create', adminAuth, async (req, res) => {
           } else if (postType === 2 && note.files && note.files.length > 0) {
             // 视频笔记
             const file = note.files[0]
+            const videoPath = pathModule.join(process.cwd(), file.path)
+            const videoUrl = `${baseUrl}${file.path}`
             let coverUrl = note.coverUrl || ''
             
             // 如果没有封面图，尝试生成
             if (!coverUrl) {
               try {
                 const { generateVideoThumbnail } = require('../utils/videoThumbnailHelper')
-                const videoPath = pathModule.join(process.cwd(), file.path)
                 if (fs.existsSync(videoPath)) {
                   const thumbnailResult = await generateVideoThumbnail(videoPath, user_id)
                   if (thumbnailResult.success) {
@@ -3351,10 +3352,29 @@ router.post('/batch-upload/async-create', adminAuth, async (req, res) => {
             await prisma.postVideo.create({
               data: {
                 post_id: post.id,
-                video_url: `${baseUrl}${file.path}`,
+                video_url: videoUrl,
                 cover_url: coverUrl
               }
             })
+            
+            // 添加视频到转码队列（走正常上传流程）
+            if (config.videoTranscoding && config.videoTranscoding.enabled && 
+                config.upload && config.upload.video && config.upload.video.strategy === 'local') {
+              try {
+                if (fs.existsSync(videoPath)) {
+                  const transcodingQueue = require('../utils/transcodingQueue')
+                  const taskId = transcodingQueue.addTask(
+                    videoPath,
+                    user_id,
+                    videoUrl
+                  )
+                  console.log(`✅ 视频已加入转码队列 - 笔记ID: ${post.id}, 任务ID: ${taskId}`)
+                }
+              } catch (transcodingError) {
+                console.warn(`⚠️ 添加转码任务失败: ${transcodingError.message}`)
+                // 转码失败不影响笔记创建
+              }
+            }
           }
           
           // 添加标签
