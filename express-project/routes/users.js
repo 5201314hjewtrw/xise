@@ -9,6 +9,7 @@ const { protectPostListItem } = require('../utils/paidContentHelper');
 const { auditNickname, auditBio, isAuditEnabled } = require('../utils/contentAudit');
 const { addContentAuditTask, addAuditLogTask, isQueueEnabled, generateRandomNickname, addBrowsingHistoryTask, cleanupExpiredBrowsingHistory, BROWSING_HISTORY_CONFIG } = require('../utils/queueService');
 const { checkUsernameBannedWords, checkBioBannedWords, getBannedWordAuditResult } = require('../utils/bannedWordsChecker');
+const { isAiUsernameReviewEnabled, isAiContentReviewEnabled } = require('../utils/aiReviewHelper');
 
 // 内容最大长度限制
 const MAX_CONTENT_LENGTH = 1000;
@@ -680,8 +681,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
           reason: `[本地违禁词拒绝] 昵称触发违禁词: ${nicknameCheck.matchedWords.join(', ')}，已自动替换为随机昵称: ${randomNickname}`,
           status: AUDIT_STATUS.REJECTED
         });
-      } else if (isAuditEnabled()) {
-        // 如果启用了审核，添加异步审核任务
+      } else if (isAuditEnabled() && isAiUsernameReviewEnabled()) {
+        // 如果启用了审核且用户名AI审核开关开启，添加异步审核任务
         if (isQueueEnabled()) {
           addContentAuditTask(trimmedNickname, Number(targetUserId), 'nickname', Number(targetUserId));
         } else {
@@ -706,6 +707,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           });
         }
       }
+      // 如果isAuditEnabled()为false或用户名AI审核关闭，则只使用本地违禁词检查（已在上面完成）
     }
 
     // 检查个人简介违禁词
@@ -726,8 +728,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
           reason: `[本地违禁词拒绝] 个人简介触发违禁词: ${bioCheck.matchedWords.join(', ')}，已自动清空简介`,
           status: AUDIT_STATUS.REJECTED
         });
-      } else if (isAuditEnabled()) {
-        // 需要审核，设置为待审核状态
+      } else if (isAuditEnabled() && isAiContentReviewEnabled()) {
+        // 需要审核且内容AI审核开关开启，设置为待审核状态
         updateData.bio_audit_status = AUDIT_STATUS.PENDING;
         if (isQueueEnabled()) {
           addContentAuditTask(trimmedBio, Number(targetUserId), 'bio', Number(targetUserId));
@@ -753,7 +755,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
           });
         }
       } else {
-        // 未启用审核，直接通过
+        // 未启用审核或内容AI审核关闭，只使用本地违禁词检查，直接通过
         updateData.bio_audit_status = AUDIT_STATUS.APPROVED;
       }
     }
