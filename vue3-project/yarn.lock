@@ -3426,11 +3426,6 @@ vue-demi@^0.14.10:
   resolved "https://registry.npmmirror.com/vue-demi/-/vue-demi-0.14.10.tgz"
   integrity sha512-nMZBOwuzabUO0nLgIcc6rycZEebF6eeUfaiQx9+WSk8e29IbLvPU9feI6tqW4kTo3hvoYAJkMh8n8D0fuISphg==
 
-vue-echarts@^8.0.1:
-  version "8.0.1"
-  resolved "https://registry.npmjs.org/vue-echarts/-/vue-echarts-8.0.1.tgz"
-  integrity sha512-23rJTFLu1OUEGRWjJGmdGt8fP+8+ja1gVgzMYPIPaHWpXegcO1viIAaeu2H4QHESlVeHzUAHIxKXGrwjsyXAaA==
-
 vue-router@^4.5.1:
   version "4.5.1"
   resolved "https://registry.npmmirror.com/vue-router/-/vue-router-4.5.1.tgz"
@@ -3438,7 +3433,7 @@ vue-router@^4.5.1:
   dependencies:
     "@vue/devtools-api" "^6.6.4"
 
-"vue@^2.7.0 || ^3.5.11", vue@^3.0.0, "vue@^3.0.0-0 || ^2.6.0", vue@^3.2.0, vue@^3.2.23, vue@^3.2.25, vue@^3.3.0, vue@^3.5.0, vue@^3.5.17, vue@>=3, vue@3.5.18:
+"vue@^2.7.0 || ^3.5.11", vue@^3.0.0, "vue@^3.0.0-0 || ^2.6.0", vue@^3.2.0, vue@^3.2.23, vue@^3.2.25, vue@^3.5.0, vue@^3.5.17, vue@>=3, vue@3.5.18:
   version "3.5.18"
   resolved "https://registry.npmmirror.com/vue/-/vue-3.5.18.tgz"
   integrity sha512-7W4Y4ZbMiQ3SEo+m9lnoNpV9xG7QVMLa+/0RFwwiAVkeYoyGXqWE85jabU4pllJNUzqfLShJ5YLptewhCWUgNA==

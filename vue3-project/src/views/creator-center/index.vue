@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { creatorCenterApi } from '@/api/index.js'
@@ -158,11 +158,10 @@ const loadTrends = async () => {
     const response = await creatorCenterApi.getTrends()
     if (response.success) {
       trends.value = response.data
-      // 延迟初始化图表，确保DOM已渲染
-      setTimeout(() => {
-        initEarningsChart()
-        initTrendsChart()
-      }, 100)
+      // 使用 nextTick 确保 DOM 已渲染后再初始化图表
+      await nextTick()
+      initEarningsChart()
+      initTrendsChart()
     }
   } catch (error) {
     console.error('获取趋势数据失败:', error)
