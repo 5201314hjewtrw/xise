@@ -22,11 +22,6 @@ const logoUrl = new URL('@/assets/imgs/汐社.png', import.meta.url).href
 const isLargeScreen = ref(window.innerWidth > 695)
 const showSidebar = ref(window.innerWidth > 960)
 
-// 检查是否在用户页面（需要透明导航栏）
-const isUserPage = computed(() => {
-    return route.path === '/user' || route.name === 'user'
-})
-
 // 检查是否在探索页面（需要显示频道标签）
 const isExplorePage = computed(() => {
     return route.path === '/explore' || 
@@ -144,6 +139,11 @@ const displaySearch = computed(() => {
 })
 
 function openSearch() {
+    // 在小屏幕下，点击搜索图标导航到搜索页面
+    if (!isLargeScreen.value) {
+        router.push({ name: 'search' })
+        return
+    }
     showSearch.value = true
 }
 function closeSearch() {
@@ -245,7 +245,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <header :class="{ 'transparent-header': isUserPage }">
+    <header>
         <div class="header-container">
             <!-- 居中显示的频道标签 - 仅在探索页面显示 -->
             <div v-if="isExplorePage && isLargeScreen" class="channel-tabs-center">
@@ -354,11 +354,6 @@ header {
     z-index: 1000;
     width: 100%;
     transition: border-color 0.2s ease, background-color 0.2s ease;
-}
-
-/* 用户页面透明导航栏 */
-header.transparent-header {
-    background: transparent;
 }
 
 .header-container {
