@@ -409,6 +409,13 @@ watch(() => route.query, (newQuery, oldQuery) => {
         return
     }
 
+    // 未登录时不执行搜索
+    if (!isLoggedIn.value) {
+        keyword.value = newKeyword
+        selectedTag.value = newTag
+        return
+    }
+
     // 只有当关键词或标签真正发生变化时才触发搜索
     if (keywordChanged || tagChanged) {
         keyword.value = newKeyword
@@ -436,6 +443,11 @@ watch(() => route.params.tab, (newTab, oldTab) => {
             const previousTab = activeTab.value
             activeTab.value = newTab
             navigationStore.scrollToTop('instant')
+
+            // 未登录时不执行搜索
+            if (!isLoggedIn.value) {
+                return
+            }
 
             // 切换tab时，重置标签选择为空并更新URL
             if (newTab !== 'users') {
