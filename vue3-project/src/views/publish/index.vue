@@ -78,10 +78,7 @@
         <div class="input-section">
           <input v-model="form.title" type="text" class="title-input" placeholder="请输入标题" maxlength="100"
             @input="validateForm" />
-          <div class="char-count">{{ form.title.length }}/100</div>
-        </div>
-
-        <div class="input-section">
+          <div class="title-char-count">{{ form.title.length }}/100</div>
           <div class="content-input-wrapper">
             <ContentEditableInput ref="contentTextarea" v-model="form.content" :input-class="'content-textarea'"
               placeholder="请输入内容" :enable-mention="true" :mention-users="mentionUsers" @focus="handleContentFocus"
@@ -97,8 +94,8 @@
                 <SvgIcon name="attachment" class="attachment-icon" width="20" height="20" />
               </button>
             </div>
+            <div class="content-char-count">{{ form.content.length }}/2000</div>
           </div>
-          <div class="char-count">{{ form.content.length }}/2000</div>
 
           <!-- 附件预览 -->
           <div v-if="form.attachment" class="attachment-preview">
@@ -1222,8 +1219,8 @@ const handleSaveDraft = async () => {
 .title-input {
   width: 100%;
   padding: 10px;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
   background: var(--bg-color-primary);
   color: var(--text-color-primary);
   font-size: 16px;
@@ -1234,23 +1231,43 @@ const handleSaveDraft = async () => {
 
 .title-input:focus {
   outline: none;
-  border-color: var(--primary-color);
 }
 
 .title-input::placeholder {
   color: var(--text-color-secondary);
 }
 
+.title-char-count {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-color-secondary);
+  background: var(--bg-color-primary);
+  padding: 0.25rem;
+  transition: background-color 0.2s ease;
+}
+
+.content-char-count {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-color-secondary);
+  background: var(--bg-color-primary);
+  padding: 0.25rem;
+  transition: background-color 0.2s ease;
+}
+
 .content-input-wrapper {
   position: relative;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
   background: var(--bg-color-primary);
   transition: all 0.2s ease;
 }
 
 .content-input-wrapper:focus-within {
-  border-color: var(--primary-color);
 }
 
 .content-textarea {
