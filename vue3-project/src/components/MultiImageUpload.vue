@@ -111,7 +111,7 @@ import { ref, watch, nextTick } from 'vue'
 import SvgIcon from '@/components/SvgIcon.vue'
 import MessageToast from '@/components/MessageToast.vue'
 import ImageViewer from '@/components/ImageViewer.vue'
-import { imageUploadApi, uploadApi } from '@/api/index.js'
+import { imageUploadApi } from '@/api/index.js'
 
 const props = defineProps({
   modelValue: {
@@ -596,10 +596,10 @@ const uploadAllImages = async () => {
   }
 
   try {
-    // 上传新图片 - 使用新的upload.js API，传递水印选项和进度回调
+    // 上传新图片 - 使用逐个上传API（避免413错误），传递水印选项和进度回调
     const files = unuploadedImages.map(item => item.file)
 
-    const result = await uploadApi.uploadImages(files, { 
+    const result = await imageUploadApi.uploadImages(files, { 
       watermark: enableWatermark.value,
       watermarkOpacity: watermarkOpacity.value,
       // 进度回调：跟踪整体上传进度
