@@ -482,7 +482,7 @@ router.post('/purchase-content', authenticateToken, async (req, res) => {
 
     // 给作者增加收益到创作者余额（扣除平台手续费后）
     const earningsResult = await addCreatorEarnings(
-      Number(post.user_id),
+      post.user_id, // 保持BigInt类型，addCreatorEarnings内部会转换
       price, // 总金额，平台抽成在 addCreatorEarnings 中计算
       'content_sale',
       {
