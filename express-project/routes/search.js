@@ -214,7 +214,7 @@ router.get('/', optionalAuth, async (req, res) => {
           JOIN post_tags pt ON t.id = pt.tag_id
           JOIN posts p ON pt.post_id = p.id
           LEFT JOIN users u ON p.user_id = u.id
-          WHERE p.is_draft = 0 AND (
+          WHERE p.is_draft = false AND (
             p.title LIKE ${`%${keyword}%`} 
             OR p.content LIKE ${`%${keyword}%`}
             OR u.nickname LIKE ${`%${keyword}%`}
