@@ -205,32 +205,63 @@ router.get('/', optionalAuth, async (req, res) => {
       // 获取总数
       const total = await prisma.post.count({ where });
 
-      // 统计标签频率
+      // 统计标签频率 (使用 Prisma ORM)
       let tagStats = [];
       if (keyword.trim()) {
-        const tagStatsQuery = await prisma.$queryRaw`
-          SELECT t.name, COUNT(*) as count
-          FROM tags t
-          JOIN post_tags pt ON t.id = pt.tag_id
-          JOIN posts p ON pt.post_id = p.id
-          LEFT JOIN users u ON p.user_id = u.id
-          WHERE p.is_draft = 0 AND (
-            p.title LIKE ${`%${keyword}%`} 
-            OR p.content LIKE ${`%${keyword}%`}
-            OR u.nickname LIKE ${`%${keyword}%`}
-            OR u.user_id LIKE ${`%${keyword}%`}
-            OR EXISTS (SELECT 1 FROM post_tags pt2 JOIN tags t2 ON pt2.tag_id = t2.id WHERE pt2.post_id = p.id AND t2.name LIKE ${`%${keyword}%`})
-          )
-          GROUP BY t.id, t.name
-          ORDER BY t.name ASC
-          LIMIT 10
-        `;
+        // 构建与主查询一致的过滤条件
+        const tagStatsWhere = {
+          post: {
+            is_draft: false,
+            visibility: 'public',
+            OR: [
+              { title: { contains: keyword } },
+              { content: { contains: keyword } },
+              { user: { nickname: { contains: keyword } } },
+              { user: { user_id: { contains: keyword } } },
+              { tags: { some: { tag: { name: { contains: keyword } } } } }
+            ]
+          }
+        };
 
-        tagStats = tagStatsQuery.map(item => ({
-          id: item.name,
-          label: item.name,
-          count: Number(item.count)
-        }));
+        // 根据type添加内容类型过滤
+        if (type === 'posts') {
+          tagStatsWhere.post.type = 1;
+        } else if (type === 'videos') {
+          tagStatsWhere.post.type = 2;
+        }
+
+        // 使用 Prisma ORM 获取符合搜索条件的帖子的标签统计
+        const tagStatsResult = await prisma.postTag.groupBy({
+          by: ['tag_id'],
+          where: tagStatsWhere,
+          _count: {
+            tag_id: true
+          },
+          orderBy: {
+            tag_id: 'asc'
+          },
+          take: 10
+        });
+
+        // 获取标签名称
+        if (tagStatsResult.length > 0) {
+          const tagIds = tagStatsResult.map(item => item.tag_id);
+          const tags = await prisma.tag.findMany({
+            where: { id: { in: tagIds } },
+            select: { id: true, name: true },
+            orderBy: { name: 'asc' }
+          });
+          const tagMap = new Map(tags.map(t => [t.id, t.name]));
+
+          tagStats = tagStatsResult
+            .map(item => ({
+              id: tagMap.get(item.tag_id) || '',
+              label: tagMap.get(item.tag_id) || '',
+              count: item._count.tag_id
+            }))
+            .filter(item => item.id)
+            .sort((a, b) => a.label.localeCompare(b.label));
+        }
       }
 
       if (type === 'all') {
