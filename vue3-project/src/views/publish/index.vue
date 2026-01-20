@@ -1022,35 +1022,45 @@ const handleSaveDraft = async () => {
 </script>
 
 <style scoped>
+/* ============================================
+   Modern Publish Page Design
+   ============================================ */
+
 .publish-container {
   min-height: 100vh;
-  background: var(--bg-color-primary);
+  background: linear-gradient(135deg, var(--bg-color-secondary) 0%, var(--bg-color-primary) 100%);
   color: var(--text-color-primary);
   padding-bottom: calc(48px + constant(safe-area-inset-bottom));
   padding-bottom: calc(48px + env(safe-area-inset-bottom));
   margin: 72px auto;
-  min-width: 700px;
-  max-width: 700px;
-  transition: background-color 0.2s ease;
+  min-width: 720px;
+  max-width: 720px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ============================================
+   Header Section - Modern Glass Effect
+   ============================================ */
 .publish-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  padding: 1.25rem 1.5rem;
   background: var(--bg-color-primary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-color-primary);
   position: sticky;
   top: 0;
   z-index: 100;
-  transition: background-color 0.2s ease,border-color 0.2s ease;
+  box-shadow: 0 4px 24px -4px var(--shadow-color);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .header-right {
@@ -1059,49 +1069,44 @@ const handleSaveDraft = async () => {
   gap: 0.75rem;
 }
 
-.draft-box-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.2s ease;
+.page-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-color-primary);
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.draft-box-btn:hover {
-  background: var(--primary-color-dark);
-}
-
+.draft-box-btn,
 .manage-btn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
+  padding: 0.625rem 1.125rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.manage-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.page-title {
-  font-size: 1.2rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  margin: 0;
-  color: var(--text-color-primary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px var(--primary-color-shadow);
+}
+
+.draft-box-btn:hover,
+.manage-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px var(--primary-color-shadow);
+}
+
+.draft-box-btn:active,
+.manage-btn:active {
+  transform: translateY(0);
 }
 
 .header-actions {
@@ -1110,25 +1115,500 @@ const handleSaveDraft = async () => {
   gap: 0.75rem;
 }
 
-.draft-btn {
-  width: 20%;
-  padding: 12px;
-  background-color: var(--text-color-secondary);
-  color: white;
+/* ============================================
+   Main Content Area
+   ============================================ */
+.publish-content {
+  padding: 1.5rem;
+  max-width: 640px;
+  margin: 0 auto;
+  background-color: transparent;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.publish-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ============================================
+   Upload Section - Card Style
+   ============================================ */
+.upload-section {
+  background: var(--bg-color-primary);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 24px -4px var(--shadow-color);
+  border: 1px solid var(--border-color-primary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.upload-section:hover {
+  box-shadow: 0 8px 32px -4px var(--shadow-color);
+}
+
+/* Modern Pill-Style Tabs */
+.upload-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding: 0.375rem;
+  background: var(--bg-color-secondary);
+  border-radius: 14px;
   border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 500;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: transparent;
+  color: var(--text-color-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 10px;
+  position: relative;
+}
+
+.tab-btn:hover {
+  color: var(--text-color-primary);
+  background: var(--bg-color-tertiary);
+}
+
+.tab-btn.active {
+  color: white;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
+  box-shadow: 0 4px 12px var(--primary-color-shadow);
+}
+
+.upload-content {
+  margin-bottom: 0;
+}
+
+.text-image-section {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.text-image-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
+  color: var(--button-text-color);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px var(--primary-color-shadow);
+}
+
+.text-image-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px var(--primary-color-shadow);
+}
+
+.text-image-btn:active {
+  transform: translateY(0);
+}
+
+/* ============================================
+   Input Section - Modern Card Style
+   ============================================ */
+.input-section {
+  position: relative;
+  background: var(--bg-color-primary);
+  border-radius: 20px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 24px -4px var(--shadow-color);
+  border: 1px solid var(--border-color-primary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.input-section:hover {
+  box-shadow: 0 8px 32px -4px var(--shadow-color);
+}
+
+.input-section:focus-within {
+  border-color: var(--primary-color);
+  box-shadow: 0 8px 32px -4px var(--shadow-color), 0 0 0 3px var(--primary-color-shadow);
+}
+
+.title-input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--border-color-primary);
+  border-radius: 14px;
+  background: var(--bg-color-secondary);
+  color: var(--text-color-primary);
+  font-size: 1.125rem;
+  font-weight: 700;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.title-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: var(--bg-color-primary);
+  box-shadow: 0 0 0 3px var(--primary-color-shadow);
+}
+
+.title-input::placeholder {
+  color: var(--text-color-tertiary);
+  font-weight: 500;
+}
+
+.content-input-wrapper {
+  position: relative;
+  border: 2px solid var(--border-color-primary);
+  border-radius: 14px;
+  background: var(--bg-color-secondary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.content-input-wrapper:focus-within {
+  border-color: var(--primary-color);
+  background: var(--bg-color-primary);
+  box-shadow: 0 0 0 3px var(--primary-color-shadow);
+}
+
+.content-textarea {
+  width: 100%;
+  padding: 1rem;
+  padding-bottom: 3.5rem;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--text-color-primary);
+  font-size: 1rem;
+  line-height: 1.6;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 140px;
+  box-sizing: border-box;
+  caret-color: var(--primary-color);
+}
+
+.content-textarea:focus {
+  outline: none;
+}
+
+.content-textarea:empty:before {
+  content: attr(placeholder);
+  color: var(--text-color-tertiary);
+  pointer-events: none;
+}
+
+/* Content Action Buttons */
+.content-actions {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem;
+  background: var(--bg-color-tertiary);
+  border-radius: 12px;
+}
+
+.emoji-btn,
+.mention-btn,
+.attachment-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: var(--bg-color-primary);
+  color: var(--text-color-secondary);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.emoji-btn:hover,
+.mention-btn:hover,
+.attachment-btn:hover {
+  background: var(--primary-color);
+  color: white;
+  transform: scale(1.05);
+}
+
+.emoji-icon,
+.mention-icon,
+.attachment-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.char-count {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-color-tertiary);
+  background: var(--bg-color-tertiary);
+  padding: 0.375rem 0.75rem;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================
+   Attachment Preview - Modern Style
+   ============================================ */
+.attachment-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  margin-top: 1rem;
+  background: var(--bg-color-secondary);
+  border-radius: 12px;
+  border: 2px solid var(--border-color-primary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.attachment-preview:hover {
+  border-color: var(--primary-color);
+}
+
+.attachment-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-color-secondary);
+  overflow: hidden;
+}
+
+.attachment-name {
+  font-size: 0.875rem;
+  color: var(--text-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  font-weight: 500;
+}
+
+.attachment-size {
+  font-size: 0.75rem;
+  color: var(--text-color-tertiary);
+}
+
+.remove-attachment-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--bg-color-tertiary);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-color-tertiary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.remove-attachment-btn:hover {
+  background: var(--danger-color);
+  color: white;
+  transform: scale(1.05);
+}
+
+/* ============================================
+   Payment Settings Button - Modern Style
+   ============================================ */
+.payment-settings-section {
+  margin-top: 1rem;
+}
+
+.payment-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  background: var(--bg-color-secondary);
+  border: 2px solid var(--border-color-primary);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-color-secondary);
+}
+
+.payment-settings-btn:hover {
+  border-color: var(--primary-color);
+  background: var(--bg-color-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px var(--shadow-color);
+}
+
+.payment-settings-btn.active {
+  border-color: var(--primary-color);
+  background: linear-gradient(135deg, rgba(255, 36, 66, 0.08) 0%, rgba(179, 31, 53, 0.05) 100%);
+  color: var(--primary-color);
+}
+
+.payment-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.payment-text {
+  flex: 1;
+  text-align: left;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.payment-arrow {
+  color: var(--text-color-tertiary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.payment-settings-btn:hover .payment-arrow {
+  transform: translateX(4px);
+}
+
+.payment-settings-btn.active .payment-arrow {
+  color: var(--primary-color);
+}
+
+/* ============================================
+   Tag Section - Card Style
+   ============================================ */
+.tag-section {
+  background: var(--bg-color-primary);
+  border-radius: 20px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 24px -4px var(--shadow-color);
+  border: 1px solid var(--border-color-primary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tag-section:hover {
+  box-shadow: 0 8px 32px -4px var(--shadow-color);
+}
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-color-primary);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.section-title::before {
+  content: '';
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(180deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
+  border-radius: 2px;
+}
+
+/* ============================================
+   Emoji Panel - Modern Glass Style
+   ============================================ */
+.emoji-panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.25s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.emoji-panel {
+  background: var(--bg-color-primary);
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  animation: scaleIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 90vw;
+  max-height: 80vh;
+  border: 1px solid var(--border-color-primary);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ============================================
+   Publish Actions - Modern Button Style
+   ============================================ */
+.publish-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem 1.5rem;
+  margin-top: 1.5rem;
+  background: var(--bg-color-primary);
+  border-radius: 20px;
+  box-shadow: 0 4px 24px -4px var(--shadow-color);
+  border: 1px solid var(--border-color-primary);
+}
+
+.draft-btn {
+  flex: 1;
+  max-width: 180px;
+  padding: 1rem 1.5rem;
+  background: var(--bg-color-secondary);
+  color: var(--text-color-primary);
+  border: 2px solid var(--border-color-primary);
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .draft-btn:hover:not(:disabled) {
-  background: var(--text-color-primary);
+  border-color: var(--text-color-secondary);
+  background: var(--bg-color-tertiary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px var(--shadow-color);
 }
 
 .draft-btn:disabled {
@@ -1137,24 +1617,27 @@ const handleSaveDraft = async () => {
 }
 
 .publish-btn {
-  width: 20%;
-  padding: 12px;
-  background-color: var(--primary-color);
+  flex: 1;
+  max-width: 180px;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
   color: white;
   border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 500;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0.5rem;
+  box-shadow: 0 4px 16px var(--primary-color-shadow);
 }
 
 .publish-btn:hover:not(:disabled) {
-  background: var(--primary-color-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px var(--primary-color-shadow);
 }
 
 .publish-btn:disabled {
@@ -1167,350 +1650,67 @@ const handleSaveDraft = async () => {
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-.publish-content {
-  padding: 1rem;
-  max-width: 600px;
-  margin: 0 auto;
-  background-color: var(--bg-color-primary);
-  transition: background-color 0.2s ease;
-}
-
-.publish-form {
+/* ============================================
+   Login Prompt - Modern Card Style
+   ============================================ */
+.login-prompt {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-}
-
-.upload-section {
-  margin-bottom: 0.5rem;
-}
-
-.upload-tabs {
-  display: flex;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color-primary);
-}
-
-.tab-btn {
-  padding: 12px 24px;
-  border: none;
-  background: transparent;
-  color: var(--text-color-secondary);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-bottom: 2px solid transparent;
-  position: relative;
-}
-
-.tab-btn:hover {
-  color: var(--text-color-primary);
-}
-
-.tab-btn.active {
-  color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
-}
-
-.upload-content {
-  margin-bottom: 1rem;
-}
-
-.image-upload-section {
-  margin-bottom: 0.5rem;
-}
-
-.input-section {
-  position: relative;
-}
-
-.title-input {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
-  color: var(--text-color-primary);
-  font-size: 16px;
-  font-weight: bold;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
-}
-
-.title-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-}
-
-.title-input::placeholder {
-  color: var(--text-color-secondary);
-}
-
-.content-input-wrapper {
-  position: relative;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
-  transition: all 0.2s ease;
-}
-
-.content-input-wrapper:focus-within {
-  border-color: var(--primary-color);
-}
-
-.content-textarea {
-  width: 100%;
-  padding: 1rem;
-  padding-bottom: 3rem;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-color-primary);
-  font-size: 16px;
-  line-height: 1.5;
-  transition: all 0.2s ease;
-  min-height: 120px;
-  box-sizing: border-box;
-  caret-color: var(--primary-color);
-}
-
-.content-textarea:focus {
-  outline: none;
-}
-
-.content-textarea:empty:before {
-  content: attr(placeholder);
-  color: var(--text-color-secondary);
-  pointer-events: none;
-}
-
-.content-actions {
-  position: absolute;
-  bottom: 0.5rem;
-  left: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.emoji-btn,
-.mention-btn,
-.attachment-btn {
-  display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-color-secondary);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.emoji-btn:hover,
-.mention-btn:hover,
-.attachment-btn:hover {
-  background: var(--bg-color-secondary);
-  color: var(--text-color-primary);
-}
-
-.emoji-icon,
-.mention-icon,
-.attachment-icon {
-  width: 20px;
-  height: 20px;
-}
-
-/* 附件预览样式 */
-.attachment-preview {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  margin-top: 8px;
-  background: var(--bg-color-secondary);
-  border-radius: 6px;
+  padding: 4rem 2rem;
+  text-align: center;
+  background: var(--bg-color-primary);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px -4px var(--shadow-color);
   border: 1px solid var(--border-color-primary);
+  margin: 1rem;
 }
 
-.attachment-info {
+.prompt-content {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  color: var(--text-color-secondary);
-  overflow: hidden;
 }
 
-.attachment-name {
-  font-size: 13px;
+.prompt-icon {
+  color: var(--text-color-quaternary);
+  margin-bottom: 1.5rem;
+  opacity: 0.6;
+}
+
+.prompt-content h3 {
   color: var(--text-color-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem 0;
 }
 
-.attachment-size {
-  font-size: 12px;
-  color: var(--text-color-tertiary);
-}
-
-.remove-attachment-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-color-tertiary);
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.remove-attachment-btn:hover {
-  background: var(--danger-color);
-  color: white;
-}
-
-/* 付费设置按钮样式 */
-.payment-settings-section {
-  margin-top: 12px;
-}
-
-.payment-settings-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 12px 16px;
-  background: var(--bg-color-secondary);
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+.prompt-content p {
   color: var(--text-color-secondary);
+  font-size: 0.95rem;
+  margin: 0 0 1.5rem 0;
+  line-height: 1.6;
 }
 
-.payment-settings-btn:hover {
-  border-color: var(--primary-color);
-  background: var(--bg-color-primary);
-}
-
-.payment-settings-btn.active {
-  border-color: var(--primary-color);
-  background: rgba(var(--primary-color-rgb), 0.05);
-  color: var(--primary-color);
-}
-
-.payment-icon {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.payment-text {
-  flex: 1;
-  text-align: left;
-  font-size: 14px;
-}
-
-.payment-arrow {
-  color: var(--text-color-tertiary);
-}
-
-.payment-settings-btn.active .payment-arrow {
-  color: var(--primary-color);
-}
-
-.emoji-panel-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.2s ease;
-}
-
-.emoji-panel {
-  background: var(--bg-color-primary);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
-  animation: scaleIn 0.2s ease;
-  max-width: 90vw;
-  max-height: 80vh;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.char-count {
-  position: absolute;
-  bottom: 0.5rem;
-  right: 0.75rem;
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  background: var(--bg-color-primary);
-  padding: 0.25rem;
-  transition: background-color 0.2s ease;
-}
-
-
-.section-title {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-color-primary);
-  margin-bottom: 0.75rem;
-}
-
+/* ============================================
+   Tag Related Styles (preserved for TagSelector)
+   ============================================ */
 .tag-input-wrapper {
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
-  padding: 0.75rem;
-  transition: border-color 0.2s ease;
+  border: 2px solid var(--border-color-primary);
+  border-radius: 14px;
+  background: var(--bg-color-secondary);
+  padding: 1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tag-input-wrapper:focus-within {
   border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-color-shadow);
 }
 
 .selected-tags {
@@ -1523,21 +1723,22 @@ const handleSaveDraft = async () => {
 .selected-tag {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.4rem 0.6rem;
-  background: var(--primary-color);
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
   color: var(--button-text-color);
-  border-radius: 16px;
+  border-radius: 20px;
   font-size: 0.8rem;
-  animation: fadeIn 0.2s ease;
+  font-weight: 500;
+  animation: tagAppear 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px var(--primary-color-shadow);
 }
 
-@keyframes fadeIn {
+@keyframes tagAppear {
   from {
     opacity: 0;
     transform: scale(0.8);
   }
-
   to {
     opacity: 1;
     transform: scale(1);
@@ -1548,10 +1749,10 @@ const handleSaveDraft = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: none;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
   color: white;
   border-radius: 50%;
   cursor: pointer;
@@ -1561,7 +1762,7 @@ const handleSaveDraft = async () => {
 }
 
 .remove-tag-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.4);
   transform: scale(1.1);
 }
 
@@ -1579,6 +1780,7 @@ const handleSaveDraft = async () => {
   font-size: 0.9rem;
   outline: none;
   padding: 0.25rem 0;
+  min-width: 80px;
 }
 
 .tag-input:disabled {
@@ -1587,155 +1789,91 @@ const handleSaveDraft = async () => {
 }
 
 .tag-input::placeholder {
-  color: var(--text-color-secondary);
+  color: var(--text-color-tertiary);
 }
 
 .add-tag-btn {
-  padding: 0.25rem 0.75rem;
-  background: var(--primary-color);
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 10px;
   font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .add-tag-btn:hover {
-  background: var(--primary-color-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--primary-color-shadow);
 }
 
-.tag-suggestions {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background: var(--bg-color-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color-primary);
-}
-
-.suggestions-title {
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.suggestions-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.tag-suggestion {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 16px;
-  background: var(--bg-color-primary);
-  color: var(--text-color-primary);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-suggestion:hover {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
-  color: white;
-}
-
+.tag-suggestions,
 .recommended-tags {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
   background: var(--bg-color-secondary);
-  border-radius: 8px;
+  border-radius: 14px;
   border: 1px solid var(--border-color-primary);
 }
 
+.suggestions-title,
 .recommendations-title {
   font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  margin-bottom: 0.5rem;
+  color: var(--text-color-tertiary);
+  margin-bottom: 0.75rem;
+  font-weight: 500;
 }
 
+.suggestions-list,
 .tags-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
+.tag-suggestion,
 .tag-item {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 16px;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--border-color-primary);
+  border-radius: 20px;
   background: var(--bg-color-primary);
   color: var(--text-color-primary);
   font-size: 0.8rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.tag-suggestion:hover,
 .tag-item:hover {
   border-color: var(--primary-color);
   background: var(--primary-color);
   color: white;
+  transform: translateY(-1px);
 }
 
 .tag-item.active {
-  background: var(--primary-color);
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
   color: white;
   border-color: var(--primary-color);
 }
 
-
-
-.publish-actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
-  padding: 2rem 1rem;
-  margin-top: 2rem;
-  background: var(--bg-color-primary);
-}
-
-.publish-actions .cancel-btn {
-  padding: 0.75rem 1.5rem;
-  background: transparent;
-  color: var(--text-color-secondary);
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 100px;
-}
-
-
-
-.publish-actions .loading-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* 响应式设计 */
+/* ============================================
+   Responsive Design
+   ============================================ */
 @media (max-width: 960px) {
   .publish-container {
     min-width: 100%;
     max-width: 100%;
     margin: 72px 0;
+    background: var(--bg-color-primary);
   }
 
   .publish-header {
-    padding: 0.75rem 1rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0;
   }
 
   .header-right {
@@ -1744,103 +1882,66 @@ const handleSaveDraft = async () => {
 
   .draft-box-btn,
   .manage-btn {
-    padding: 0.4rem 0.8rem;
+    padding: 0.5rem 0.875rem;
     font-size: 0.8rem;
-  }
-
-  .publish-content {
-    padding: 0.75rem;
-  }
-
-  .publish-actions {
-    padding: 1rem 0.75rem;
-  }
-}
-
-/* 登录提示样式 */
-.login-prompt {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px 20px;
-  text-align: center;
-}
-
-.prompt-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.prompt-icon {
-  color: var(--text-color-quaternary);
-  margin-bottom: 16px;
-}
-
-.prompt-content h3 {
-  color: var(--text-color-primary);
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 8px 0;
-}
-
-.prompt-content p {
-  color: var(--text-color-secondary);
-  font-size: 14px;
-  margin: 0 0 20px 0;
-  line-height: 1.5;
-}
-
-.tag-input {
-  min-width: 80px;
-}
-
-.publish-actions {
-  padding: 1.5rem 0.75rem;
-  gap: 0.75rem;
-}
-
-.publish-actions .cancel-btn,
-.publish-actions .draft-btn,
-.publish-actions .publish-btn {
-  padding: 0.6rem 1.2rem;
-  font-size: 0.85rem;
-  min-width: 80px;
-}
-
-@media (max-width: 480px) {
-  .publish-header {
-    padding: 16px 14px;
-  }
-
-  .page-title {
-    margin-left: 12px;
-  }
-
-  .header-actions {
-    gap: 0.5rem;
-  }
-
-  .cancel-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .draft-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .publish-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
+    border-radius: 10px;
   }
 
   .publish-content {
     padding: 1rem;
   }
 
+  .upload-section,
+  .input-section,
+  .tag-section,
+  .publish-actions {
+    border-radius: 16px;
+  }
+
+  .publish-actions {
+    padding: 1.25rem 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .publish-header {
+    padding: 1rem;
+  }
+
+  .page-title {
+    font-size: 1.15rem;
+  }
+
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  .draft-box-btn,
+  .manage-btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .publish-content {
+    padding: 0.75rem;
+  }
+
+  .upload-section,
+  .input-section,
+  .tag-section {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+
+  .tab-btn {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .title-input {
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+  }
 
   .tag-input {
     min-width: 60px;
@@ -1848,48 +1949,17 @@ const handleSaveDraft = async () => {
   }
 
   .publish-actions {
-    padding: 1rem 0.5rem;
-    gap: 0.5rem;
+    padding: 1rem;
+    gap: 0.75rem;
     flex-direction: column;
   }
 
-}
-
-.text-image-section {
-  margin-top: 0.75rem;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.text-image-btn {
-  display: flex;
-  align-items: center;
-  padding: 0.4rem;
-  background: var(--primary-color);
-  color: var(--button-text-color);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.text-image-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.text-image-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
-}
-
-.publish-actions .cancel-btn,
-.publish-actions .draft-btn,
-.publish-actions .publish-btn {
-  width: 100%;
-  padding: 0.75rem;
-  font-size: 0.9rem;
-  min-width: unset;
+  .draft-btn,
+  .publish-btn {
+    width: 100%;
+    max-width: none;
+    padding: 0.875rem;
+    font-size: 0.95rem;
+  }
 }
 </style>
