@@ -1,0 +1,509 @@
+/**
+ * 创作者中心路由
+ * 处理创作者收益相关功能
+ */
+
+const express = require('express');
+const router = express.Router();
+const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
+const { prisma, creatorCenter: creatorCenterConfig } = require('../config/config');
+const { authenticateToken } = require('../middleware/auth');
+
+// 默认平台抽成比例 (10%)
+const DEFAULT_PLATFORM_FEE_RATE = 0.10;
+
+// 获取平台抽成比例
+const getPlatformFeeRate = () => {
+  if (creatorCenterConfig && typeof creatorCenterConfig.platformFeeRate === 'number') {
+    return creatorCenterConfig.platformFeeRate;
+  }
+  return DEFAULT_PLATFORM_FEE_RATE;
+};
+
+// 获取或初始化创作者收益账户
+const getOrCreateCreatorEarnings = async (userId) => {
+  const userIdBigInt = BigInt(userId);
+  
+  let earnings = await prisma.creatorEarnings.findUnique({
+    where: { user_id: userIdBigInt }
+  });
+  
+  if (!earnings) {
+    earnings = await prisma.creatorEarnings.create({
+      data: {
+        user_id: userIdBigInt,
+        balance: 0.00,
+        total_earnings: 0.00,
+        withdrawn_amount: 0.00
+      }
+    });
+  }
+  
+  return {
+    id: earnings.id,
+    balance: parseFloat(earnings.balance),
+    total_earnings: parseFloat(earnings.total_earnings),
+    withdrawn_amount: parseFloat(earnings.withdrawn_amount)
+  };
+};
+
+// 添加创作者收益
+const addCreatorEarnings = async (userId, grossAmount, type, options = {}) => {
+  const userIdBigInt = BigInt(userId);
+  
+  // 计算平台抽成
+  const platformFeeRate = getPlatformFeeRate();
+  const platformFee = grossAmount * platformFeeRate;
+  const netAmount = grossAmount - platformFee;
+  
+  // 获取或创建收益账户
+  const earnings = await getOrCreateCreatorEarnings(userId);
+  const newBalance = earnings.balance + netAmount;
+  const newTotalEarnings = earnings.total_earnings + netAmount;
+  
+  // 更新收益余额
+  await prisma.creatorEarnings.update({
+    where: { user_id: userIdBigInt },
+    data: { 
+      balance: newBalance,
+      total_earnings: newTotalEarnings
+    }
+  });
+  
+  // 记录收益日志
+  await prisma.creatorEarningsLog.create({
+    data: {
+      user_id: userIdBigInt,
+      earnings_id: earnings.id,
+      amount: netAmount,
+      balance_after: newBalance,
+      type: type,
+      source_id: options.sourceId ? BigInt(options.sourceId) : null,
+      source_type: options.sourceType || null,
+      buyer_id: options.buyerId ? BigInt(options.buyerId) : null,
+      reason: options.reason || null,
+      platform_fee: platformFee
+    }
+  });
+  
+  return {
+    grossAmount: grossAmount,
+    platformFee: platformFee,
+    netAmount: netAmount,
+    newBalance: newBalance,
+    newTotalEarnings: newTotalEarnings
+  };
+};
+
+// 获取创作者中心配置
+router.get('/config', (req, res) => {
+  const platformFeeRate = getPlatformFeeRate();
+  const creatorShareRate = 1 - platformFeeRate;
+  
+  res.json({
+    code: RESPONSE_CODES.SUCCESS,
+    data: {
+      platformFeeRate: platformFeeRate,
+      creatorShareRate: creatorShareRate,
+      withdrawEnabled: creatorCenterConfig?.withdrawEnabled ?? false,
+      minWithdrawAmount: creatorCenterConfig?.minWithdrawAmount ?? 10
+    },
+    message: 'success'
+  });
+});
+
+// 获取创作者收益概览
+router.get('/overview', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userIdBigInt = BigInt(userId);
+    
+    // 获取收益账户信息
+    const earnings = await getOrCreateCreatorEarnings(userId);
+    
+    // 获取今日收益
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayEarnings = await prisma.creatorEarningsLog.aggregate({
+      where: {
+        user_id: userIdBigInt,
+        amount: { gt: 0 },
+        created_at: { gte: today }
+      },
+      _sum: { amount: true }
+    });
+    
+    // 获取本月收益
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    const monthEarnings = await prisma.creatorEarningsLog.aggregate({
+      where: {
+        user_id: userIdBigInt,
+        amount: { gt: 0 },
+        created_at: { gte: monthStart }
+      },
+      _sum: { amount: true }
+    });
+    
+    // 获取内容统计
+    const contentStats = await prisma.post.aggregate({
+      where: {
+        user_id: userIdBigInt,
+        is_draft: false
+      },
+      _count: true,
+      _sum: {
+        view_count: true,
+        like_count: true,
+        collect_count: true
+      }
+    });
+    
+    // 获取付费内容数量
+    const paidContentCount = await prisma.postPaymentSetting.count({
+      where: {
+        enabled: true,
+        post: {
+          user_id: userIdBigInt,
+          is_draft: false
+        }
+      }
+    });
+    
+    // 获取购买人数（去重）
+    const buyerCount = await prisma.userPurchasedContent.groupBy({
+      by: ['user_id'],
+      where: {
+        author_id: userIdBigInt
+      }
+    });
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        balance: earnings.balance,
+        total_earnings: earnings.total_earnings,
+        withdrawn_amount: earnings.withdrawn_amount,
+        today_earnings: parseFloat(todayEarnings._sum.amount) || 0,
+        month_earnings: parseFloat(monthEarnings._sum.amount) || 0,
+        content_stats: {
+          total_posts: contentStats._count || 0,
+          paid_posts: paidContentCount,
+          total_views: Number(contentStats._sum?.view_count) || 0,
+          total_likes: contentStats._sum?.like_count || 0,
+          total_collects: contentStats._sum?.collect_count || 0,
+          total_buyers: buyerCount.length
+        }
+      },
+      message: 'success'
+    });
+  } catch (error) {
+    console.error('获取创作者收益概览失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    });
+  }
+});
+
+// 获取收益明细列表
+router.get('/earnings-log', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userIdBigInt = BigInt(userId);
+    const { page = 1, limit = 20, type } = req.query;
+    
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+    
+    const where = { user_id: userIdBigInt };
+    if (type) {
+      where.type = type;
+    }
+    
+    const [logs, total] = await Promise.all([
+      prisma.creatorEarningsLog.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: limitNum,
+        include: {
+          user: {
+            select: { id: true, nickname: true, avatar: true }
+          }
+        }
+      }),
+      prisma.creatorEarningsLog.count({ where })
+    ]);
+    
+    // 获取购买者信息
+    const logsWithBuyer = await Promise.all(logs.map(async (log) => {
+      let buyer = null;
+      if (log.buyer_id) {
+        buyer = await prisma.user.findUnique({
+          where: { id: log.buyer_id },
+          select: { id: true, nickname: true, avatar: true, user_id: true }
+        });
+      }
+      
+      let source = null;
+      if (log.source_id && log.source_type === 'post') {
+        source = await prisma.post.findUnique({
+          where: { id: log.source_id },
+          select: { id: true, title: true }
+        });
+      }
+      
+      return {
+        id: log.id,
+        amount: parseFloat(log.amount),
+        balance_after: parseFloat(log.balance_after),
+        type: log.type,
+        platform_fee: parseFloat(log.platform_fee),
+        reason: log.reason,
+        source: source,
+        buyer: buyer,
+        created_at: log.created_at
+      };
+    }));
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        list: logsWithBuyer,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      },
+      message: 'success'
+    });
+  } catch (error) {
+    console.error('获取收益明细失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    });
+  }
+});
+
+// 获取付费内容列表及销售统计
+router.get('/paid-content', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userIdBigInt = BigInt(userId);
+    const { page = 1, limit = 20 } = req.query;
+    
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+    
+    // 获取用户的付费帖子
+    const [posts, total] = await Promise.all([
+      prisma.post.findMany({
+        where: {
+          user_id: userIdBigInt,
+          is_draft: false,
+          paymentSettings: {
+            enabled: true
+          }
+        },
+        include: {
+          paymentSettings: true,
+          images: { take: 1 },
+          videos: { take: 1 }
+        },
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: limitNum
+      }),
+      prisma.post.count({
+        where: {
+          user_id: userIdBigInt,
+          is_draft: false,
+          paymentSettings: {
+            enabled: true
+          }
+        }
+      })
+    ]);
+    
+    // 获取每个帖子的销售统计
+    const postsWithStats = await Promise.all(posts.map(async (post) => {
+      const salesStats = await prisma.userPurchasedContent.aggregate({
+        where: { post_id: post.id },
+        _count: true,
+        _sum: { price: true }
+      });
+      
+      return {
+        id: post.id,
+        title: post.title,
+        type: post.type,
+        cover: post.images[0]?.image_url || post.videos[0]?.cover_url || null,
+        price: parseFloat(post.paymentSettings?.price) || 0,
+        view_count: Number(post.view_count),
+        like_count: post.like_count,
+        collect_count: post.collect_count,
+        sales_count: salesStats._count || 0,
+        total_revenue: parseFloat(salesStats._sum?.price) || 0,
+        created_at: post.created_at
+      };
+    }));
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        list: postsWithStats,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      },
+      message: 'success'
+    });
+  } catch (error) {
+    console.error('获取付费内容列表失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    });
+  }
+});
+
+// 收益提现到石榴点余额
+router.post('/withdraw', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userIdBigInt = BigInt(userId);
+    const { amount } = req.body;
+    
+    // 检查提现功能是否开启
+    if (!(creatorCenterConfig?.withdrawEnabled ?? false)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: '提现功能暂未开放'
+      });
+    }
+    
+    // 验证金额
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: '请输入有效的提现金额'
+      });
+    }
+    
+    // 检查最低提现金额
+    const minWithdraw = creatorCenterConfig?.minWithdrawAmount ?? 10;
+    if (numAmount < minWithdraw) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: `最低提现金额为 ${minWithdraw} 石榴点`
+      });
+    }
+    
+    // 获取创作者收益余额
+    const earnings = await getOrCreateCreatorEarnings(userId);
+    
+    if (earnings.balance < numAmount) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: `收益余额不足，当前余额: ${earnings.balance.toFixed(2)}`
+      });
+    }
+    
+    // 开始事务：从创作者余额转到石榴点
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. 扣除创作者收益余额
+      const newBalance = earnings.balance - numAmount;
+      const newWithdrawn = earnings.withdrawn_amount + numAmount;
+      
+      await tx.creatorEarnings.update({
+        where: { user_id: userIdBigInt },
+        data: { 
+          balance: newBalance,
+          withdrawn_amount: newWithdrawn
+        }
+      });
+      
+      // 2. 记录提现日志（负数）
+      await tx.creatorEarningsLog.create({
+        data: {
+          user_id: userIdBigInt,
+          earnings_id: earnings.id,
+          amount: -numAmount,
+          balance_after: newBalance,
+          type: 'withdraw',
+          reason: `提现 ${numAmount} 石榴点到余额`
+        }
+      });
+      
+      // 3. 增加石榴点余额
+      let userPoints = await tx.userPoints.findUnique({
+        where: { user_id: userIdBigInt }
+      });
+      
+      if (!userPoints) {
+        userPoints = await tx.userPoints.create({
+          data: { user_id: userIdBigInt, points: 0 }
+        });
+      }
+      
+      const currentPoints = parseFloat(userPoints.points);
+      const newPoints = currentPoints + numAmount;
+      
+      await tx.userPoints.update({
+        where: { user_id: userIdBigInt },
+        data: { points: newPoints }
+      });
+      
+      // 4. 记录石榴点日志
+      await tx.pointsLog.create({
+        data: {
+          user_id: userIdBigInt,
+          amount: numAmount,
+          balance_after: newPoints,
+          type: 'withdraw_from_earnings',
+          reason: '从创作者收益提现'
+        }
+      });
+      
+      return {
+        newEarningsBalance: newBalance,
+        newPointsBalance: newPoints
+      };
+    });
+    
+    console.log(`用户 ${userId} 提现成功: 收益余额 -${numAmount}, 石榴点 +${numAmount}`);
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        amount: numAmount,
+        newEarningsBalance: result.newEarningsBalance,
+        newPointsBalance: result.newPointsBalance
+      },
+      message: '提现成功'
+    });
+  } catch (error) {
+    console.error('提现失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: error.message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    });
+  }
+});
+
+// 导出模块和辅助函数
+module.exports = router;
+module.exports.addCreatorEarnings = addCreatorEarnings;
+module.exports.getOrCreateCreatorEarnings = getOrCreateCreatorEarnings;
+module.exports.getPlatformFeeRate = getPlatformFeeRate;

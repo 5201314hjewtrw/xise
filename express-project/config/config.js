@@ -385,6 +385,16 @@ const config = {
     exchangeRateOut: parseFloat(process.env.BALANCE_EXCHANGE_RATE_OUT) || 1.0
   },
 
+  // 创作者中心配置
+  creatorCenter: {
+    // 平台抽成比例 (0.1 = 10%)
+    platformFeeRate: parseFloat(process.env.CREATOR_PLATFORM_FEE_RATE) || 0.10,
+    // 是否允许提现到石榴点
+    withdrawEnabled: process.env.CREATOR_WITHDRAW_ENABLED === 'true',
+    // 最低提现金额
+    minWithdrawAmount: parseFloat(process.env.CREATOR_MIN_WITHDRAW_AMOUNT) || 10
+  },
+
   // 内容审核配置
   contentAudit: {
     // 是否启用内容审核
