@@ -66,13 +66,6 @@
               @error="handleUploadError"
             />
           </div>
-
-          <div v-if="uploadType === 'image'" class="text-image-section">
-            <button type="button" class="text-image-btn" @click="openTextImageModal">
-              <SvgIcon name="magic" width="16" height="16" />
-              <span>文字配图</span>
-            </button>
-          </div>
         </div>
 
         <div class="input-section">
@@ -92,6 +85,9 @@
               </button>
               <button type="button" class="attachment-btn" @click="openAttachmentModal">
                 <SvgIcon name="attachment" class="attachment-icon" width="20" height="20" />
+              </button>
+              <button v-if="uploadType === 'image'" type="button" class="text-image-action-btn" @click="openTextImageModal">
+                <SvgIcon name="magic" width="20" height="20" />
               </button>
             </div>
             <div class="content-char-count">{{ form.content.length }}/2000</div>
@@ -1307,7 +1303,8 @@ const handleSaveDraft = async () => {
 
 .emoji-btn,
 .mention-btn,
-.attachment-btn {
+.attachment-btn,
+.text-image-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1323,7 +1320,8 @@ const handleSaveDraft = async () => {
 
 .emoji-btn:hover,
 .mention-btn:hover,
-.attachment-btn:hover {
+.attachment-btn:hover,
+.text-image-action-btn:hover {
   background: var(--bg-color-secondary);
   color: var(--text-color-primary);
 }
@@ -1857,34 +1855,6 @@ const handleSaveDraft = async () => {
 
 }
 
-.text-image-section {
-  margin-top: 0.75rem;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.text-image-btn {
-  display: flex;
-  align-items: center;
-  padding: 0.4rem;
-  background: var(--primary-color);
-  color: var(--button-text-color);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.text-image-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.text-image-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
-}
 
 .publish-actions .cancel-btn,
 .publish-actions .draft-btn,

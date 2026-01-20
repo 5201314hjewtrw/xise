@@ -90,12 +90,7 @@
       </div>
     </div>
 
-    <div class="upload-tips">
-      <p>• 最多上传{{ maxImages }}张图片</p>
-      <p>• 支持 JPG、PNG 格式</p>
-      <p>• 单张图片不超过100MB</p>
-      <p class="drag-tip">• <span class="desktop-tip">拖拽图片可调整顺序</span><span class="mobile-tip">长按图片可拖拽排序</span></p>
-    </div>
+
 
 
     <MessageToast v-if="showToast" :message="toastMessage" :type="toastType" @close="handleToastClose" />
@@ -814,9 +809,10 @@ defineExpose({
 
 .upload-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 80px));
+  gap: 8px;
   margin-bottom: 10px;
+  justify-content: start;
 }
 
 .image-item,
@@ -1148,23 +1144,7 @@ defineExpose({
   text-overflow: ellipsis;
 }
 
-.upload-tips {
-  font-size: 12px;
-  color: var(--text-color-secondary);
-  line-height: 1.4;
-}
 
-.upload-tips p {
-  margin: 2px 0;
-}
-
-.drag-tip .mobile-tip {
-  display: none;
-}
-
-.drag-tip .desktop-tip {
-  display: inline;
-}
 
 /* 水印选项样式 */
 .watermark-option {
@@ -1272,16 +1252,5 @@ defineExpose({
   cursor: pointer;
   border: none;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-/* 移动端显示不同的提示 */
-@media (max-width: 768px) {
-  .drag-tip .mobile-tip {
-    display: inline;
-  }
-
-  .drag-tip .desktop-tip {
-    display: none;
-  }
 }
 </style>
