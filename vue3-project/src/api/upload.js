@@ -4,8 +4,8 @@ const DEFAULT_CHUNK_SIZE = 3 * 1024 * 1024
 // 默认图片最大大小 100MB
 const DEFAULT_IMAGE_MAX_SIZE = 100 * 1024 * 1024
 
-// 超过此大小的图片使用分片上传（默认3MB）
-const DEFAULT_CHUNK_THRESHOLD = 3 * 1024 * 1024
+// 超过此大小的图片使用分片上传（默认2MB）
+const DEFAULT_CHUNK_THRESHOLD = 2 * 1024 * 1024
 
 // 导入SparkMD5（用于计算文件MD5）
 import SparkMD5 from 'spark-md5'
@@ -225,9 +225,9 @@ export async function uploadImage(file, options = {}) {
 
     // 不进行前端压缩，直接上传原文件，由后端进行压缩和WebP转换处理
     // 注意：上传大文件会增加网络传输时间，但后端会进行优化处理
-    // 如果文件超过3MB，使用分片上传以提高大文件上传的可靠性
+    // 如果文件超过2MB，使用分片上传以提高大文件上传的可靠性
     if (file.size > DEFAULT_CHUNK_THRESHOLD) {
-      console.log(`📤 图片大小 ${formatFileSize(file.size)} 超过 3MB，使用分片上传`)
+      console.log(`📤 图片大小 ${formatFileSize(file.size)} 超过 2MB，使用分片上传`)
       return await uploadImageChunked(file, options)
     }
 
