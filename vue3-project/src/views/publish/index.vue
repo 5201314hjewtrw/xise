@@ -260,11 +260,7 @@ const isEditMode = ref(false)
 const mentionUsers = ref([])
 
 const canPublish = computed(() => {
-  // 检查必填字段：标题、内容
-  if (!form.title.trim() || !form.content.trim()) {
-    return false
-  }
-  
+  // 只检查媒体文件，不再强制要求标题和内容
   if (uploadType.value === 'image') {
     // 检查图片上传组件是否有待上传的图片
     if (!multiImageUploadRef.value) return false
@@ -596,18 +592,7 @@ const handleInputKeydown = (event) => {
 
 
 const handlePublish = async () => {
-
-  
-  // 验证必填字段
-  if (!form.title.trim()) {
-    showMessage('请输入标题', 'error')
-    return
-  }
-
-  if (!form.content.trim()) {
-    showMessage('请输入内容', 'error')
-    return
-  }
+  // 不再强制要求标题和内容，仅验证媒体文件是否符合要求
 
   // 根据上传类型验证媒体文件
   if (uploadType.value === 'image') {
