@@ -330,6 +330,12 @@ router.get('/overview', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const userIdBigInt = BigInt(userId);
     
+    // 自动发放今日激励奖励
+    const config = getExtendedEarningsConfig();
+    if (config.enabled) {
+      await claimExtendedEarnings(userId); // 自动领取，忽略结果
+    }
+    
     // 获取收益账户信息
     const earnings = await getOrCreateCreatorEarnings(userId);
     
@@ -358,48 +364,6 @@ router.get('/overview', authenticateToken, async (req, res) => {
       _sum: { amount: true }
     });
     
-    // 获取内容统计
-    const contentStats = await prisma.post.aggregate({
-      where: {
-        user_id: userIdBigInt,
-        is_draft: false
-      },
-      _count: true,
-      _sum: {
-        view_count: true,
-        like_count: true,
-        collect_count: true
-      }
-    });
-    
-    // 获取付费内容数量
-    const paidContentCount = await prisma.postPaymentSetting.count({
-      where: {
-        enabled: true,
-        post: {
-          user_id: userIdBigInt,
-          is_draft: false
-        }
-      }
-    });
-    
-    // 获取购买人数（去重）
-    const buyerCount = await prisma.userPurchasedContent.groupBy({
-      by: ['user_id'],
-      where: {
-        author_id: userIdBigInt
-      }
-    });
-    
-    // 计算今日扩展收益
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const todayExtendedEarnings = await calculateExtendedEarnings(userId, today, tomorrow);
-    
-    // 计算本月扩展收益
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const monthExtendedEarnings = await calculateExtendedEarnings(userId, monthStart, nextMonth);
-    
     res.json({
       code: RESPONSE_CODES.SUCCESS,
       data: {
@@ -407,20 +371,7 @@ router.get('/overview', authenticateToken, async (req, res) => {
         total_earnings: earnings.total_earnings,
         withdrawn_amount: earnings.withdrawn_amount,
         today_earnings: parseFloat(todayEarnings._sum.amount) || 0,
-        month_earnings: parseFloat(monthEarnings._sum.amount) || 0,
-        content_stats: {
-          total_posts: contentStats._count || 0,
-          paid_posts: paidContentCount,
-          total_views: Number(contentStats._sum?.view_count) || 0,
-          total_likes: contentStats._sum?.like_count || 0,
-          total_collects: contentStats._sum?.collect_count || 0,
-          total_buyers: buyerCount.length
-        },
-        // 扩展收益数据
-        extended_earnings: {
-          today: todayExtendedEarnings,
-          month: monthExtendedEarnings
-        }
+        month_earnings: parseFloat(monthEarnings._sum.amount) || 0
       },
       message: 'success'
     });
