@@ -391,7 +391,7 @@ router.get('/chunk/config', authenticateToken, (req, res) => {
       chunkSize: config.upload.video.chunk.chunkSize,
       maxFileSize: config.upload.video.maxSizeBytes, // 使用配置中的视频大小限制
       imageMaxSize: 100 * 1024 * 1024, // 图片最大100MB
-      imageChunkThreshold: 3 * 1024 * 1024 // 图片超过3MB使用分片上传
+      imageChunkThreshold: 2 * 1024 * 1024 // 图片超过2MB使用分片上传
     }
   });
 });
