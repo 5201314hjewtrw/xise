@@ -1,160 +1,216 @@
 <template>
   <div class="publish-container">
-    <div class="publish-header">
-      <div class="header-left">
-        <h1 class="page-title">发布笔记</h1>
+    <!-- 现代化头部 -->
+    <header class="publish-header">
+      <div class="header-content">
+        <h1 class="page-title">
+          <span class="title-icon">✨</span>
+          创作笔记
+        </h1>
+        <div class="header-actions">
+          <button class="header-btn secondary" @click="goToDraftBox">
+            <SvgIcon name="draft" width="18" height="18" />
+            <span>草稿箱</span>
+          </button>
+          <button class="header-btn secondary" @click="goToPostManagement">
+            <SvgIcon name="post" width="18" height="18" />
+            <span>笔记管理</span>
+          </button>
+        </div>
       </div>
-      <div class="header-right">
-        <button class="draft-box-btn" @click="goToDraftBox">
-          <SvgIcon name="draft" width="20" height="20" color="white" />
-          <span>草稿箱</span>
-        </button>
-        <button class="manage-btn" @click="goToPostManagement">
-          <SvgIcon name="post" width="20" height="20" />
-          <span>笔记管理</span>
-        </button>
-      </div>
-    </div>
+    </header>
 
-    <div class="publish-content">
+    <main class="publish-main">
       <!-- 登录提示 -->
       <div class="login-prompt" v-if="!isLoggedIn">
-        <div class="prompt-content">
-          <SvgIcon name="post" width="48" height="48" class="prompt-icon" />
+        <div class="prompt-card">
+          <div class="prompt-icon-wrapper">
+            <SvgIcon name="post" width="48" height="48" class="prompt-icon" />
+          </div>
           <h3>请先登录</h3>
           <p>登录后即可发布和管理笔记</p>
         </div>
       </div>
 
-      <form v-if="isLoggedIn" @submit.prevent="handlePublish" class="publish-form">
-        <div class="upload-section">
-          <!-- Tab选项 -->
-          <div class="upload-tabs">
-            <button 
-              type="button" 
-              class="tab-btn" 
-              :class="{ active: uploadType === 'image' }"
-              @click="switchUploadType('image')"
-            >
-              上传图文
-            </button>
-            <button 
-              type="button" 
-              class="tab-btn" 
-              :class="{ active: uploadType === 'video' }"
-              @click="switchUploadType('video')"
-            >
-              上传视频
-            </button>
-          </div>
-
-          <!-- 上传组件 -->
-          <div class="upload-content">
-            <MultiImageUpload 
-              v-if="uploadType === 'image'"
-              ref="multiImageUploadRef" 
-              v-model="form.images" 
-              :max-images="9" 
-              :allow-delete-last="true"
-              :payment-enabled="form.paymentSettings.enabled"
-              @error="handleUploadError" 
-            />
-            <VideoUpload 
-              v-if="uploadType === 'video'"
-              ref="videoUploadRef"
-              v-model="form.video"
-              @error="handleUploadError"
-            />
-          </div>
-
-          <div v-if="uploadType === 'image'" class="text-image-section">
-            <button type="button" class="text-image-btn" @click="openTextImageModal">
-              <SvgIcon name="magic" width="16" height="16" />
-              <span>文字配图</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="input-section">
-          <input v-model="form.title" type="text" class="title-input" placeholder="请输入标题" maxlength="100"
-            @input="validateForm" />
-          <div class="char-count">{{ form.title.length }}/100</div>
-        </div>
-
-        <div class="input-section">
-          <div class="content-input-wrapper">
-            <ContentEditableInput ref="contentTextarea" v-model="form.content" :input-class="'content-textarea'"
-              placeholder="请输入内容" :enable-mention="true" :mention-users="mentionUsers" @focus="handleContentFocus"
-              @blur="handleContentBlur" @keydown="handleInputKeydown" @mention="handleMentionInput" />
-            <div class="content-actions">
-              <button type="button" class="mention-btn" @click="toggleMentionPanel">
-                <SvgIcon name="mention" class="mention-icon" width="20" height="20" />
+      <div v-if="isLoggedIn" class="publish-layout">
+        <!-- 左侧：媒体上传区域 -->
+        <section class="media-section">
+          <div class="section-card">
+            <!-- 媒体类型切换 -->
+            <div class="media-tabs">
+              <button 
+                type="button" 
+                class="media-tab" 
+                :class="{ active: uploadType === 'image' }"
+                @click="switchUploadType('image')"
+              >
+                <SvgIcon name="image" width="18" height="18" />
+                <span>图文</span>
               </button>
-              <button type="button" class="emoji-btn" @click="toggleEmojiPanel">
-                <SvgIcon name="emoji" class="emoji-icon" width="20" height="20" />
+              <button 
+                type="button" 
+                class="media-tab" 
+                :class="{ active: uploadType === 'video' }"
+                @click="switchUploadType('video')"
+              >
+                <SvgIcon name="play" width="18" height="18" />
+                <span>视频</span>
               </button>
-              <button type="button" class="attachment-btn" @click="openAttachmentModal">
-                <SvgIcon name="attachment" class="attachment-icon" width="20" height="20" />
+            </div>
+
+            <!-- 上传区域 -->
+            <div class="upload-area">
+              <MultiImageUpload 
+                v-if="uploadType === 'image'"
+                ref="multiImageUploadRef" 
+                v-model="form.images" 
+                :max-images="9" 
+                :allow-delete-last="true"
+                :payment-enabled="form.paymentSettings.enabled"
+                @error="handleUploadError" 
+              />
+              <VideoUpload 
+                v-if="uploadType === 'video'"
+                ref="videoUploadRef"
+                v-model="form.video"
+                @error="handleUploadError"
+              />
+            </div>
+
+            <!-- 文字配图按钮 -->
+            <div v-if="uploadType === 'image'" class="media-tools">
+              <button type="button" class="tool-btn" @click="openTextImageModal">
+                <SvgIcon name="magic" width="16" height="16" />
+                <span>AI 配图</span>
               </button>
             </div>
           </div>
-          <div class="char-count">{{ form.content.length }}/2000</div>
+        </section>
 
-          <!-- 附件预览 -->
-          <div v-if="form.attachment" class="attachment-preview">
-            <div class="attachment-info">
-              <SvgIcon name="attachment" width="16" height="16" />
-              <span class="attachment-name">{{ form.attachment.name }}</span>
-              <span class="attachment-size">({{ formatAttachmentSize(form.attachment.size) }})</span>
+        <!-- 右侧：内容编辑区域 -->
+        <section class="content-section">
+          <form @submit.prevent="handlePublish" class="publish-form">
+            <!-- 标题输入（可选） -->
+            <div class="form-group title-group">
+              <div class="input-wrapper">
+                <input 
+                  v-model="form.title" 
+                  type="text" 
+                  class="title-input" 
+                  placeholder="添加标题（可选）" 
+                  maxlength="100"
+                />
+                <span class="char-indicator">{{ form.title.length }}/100</span>
+              </div>
             </div>
-            <button type="button" class="remove-attachment-btn" @click="removeAttachment">
-              <SvgIcon name="close" width="14" height="14" />
-            </button>
-          </div>
 
-          <!-- 付费设置按钮 -->
-          <div class="payment-settings-section">
-            <button type="button" class="payment-settings-btn" :class="{ active: form.paymentSettings.enabled }" @click="openPaymentModal">
-              <span class="payment-icon">🍒</span>
-              <span class="payment-text">
-                <template v-if="form.paymentSettings.enabled">
-                  已设置付费：{{ form.paymentSettings.price }} 石榴点
-                </template>
-                <template v-else>
-                  设置付费内容
-                </template>
-              </span>
-              <SvgIcon name="right" width="16" height="16" class="payment-arrow" />
-            </button>
-          </div>
+            <!-- 内容输入 -->
+            <div class="form-group content-group">
+              <div class="content-wrapper">
+                <ContentEditableInput 
+                  ref="contentTextarea" 
+                  v-model="form.content" 
+                  :input-class="'content-editor'"
+                  placeholder="分享你的想法..." 
+                  :enable-mention="true" 
+                  :mention-users="mentionUsers" 
+                  @focus="handleContentFocus"
+                  @blur="handleContentBlur" 
+                  @keydown="handleInputKeydown" 
+                  @mention="handleMentionInput" 
+                />
+                <div class="content-footer">
+                  <div class="content-tools">
+                    <button type="button" class="icon-btn" @click="toggleMentionPanel" title="@好友">
+                      <SvgIcon name="mention" width="20" height="20" />
+                    </button>
+                    <button type="button" class="icon-btn" @click="toggleEmojiPanel" title="表情">
+                      <SvgIcon name="emoji" width="20" height="20" />
+                    </button>
+                    <button type="button" class="icon-btn" @click="openAttachmentModal" title="附件">
+                      <SvgIcon name="attachment" width="20" height="20" />
+                    </button>
+                  </div>
+                  <span class="char-indicator">{{ form.content.length }}/2000</span>
+                </div>
+              </div>
 
-          <!-- 可见性设置 -->
-          <VisibilitySelector v-model="form.visibility" />
-
-          <div v-if="showEmojiPanel" class="emoji-panel-overlay" v-click-outside="closeEmojiPanel">
-            <div class="emoji-panel" @click.stop>
-              <EmojiPicker @select="handleEmojiSelect" />
+              <!-- 附件预览 -->
+              <div v-if="form.attachment" class="attachment-chip">
+                <SvgIcon name="attachment" width="14" height="14" />
+                <span class="chip-text">{{ form.attachment.name }}</span>
+                <span class="chip-size">{{ formatAttachmentSize(form.attachment.size) }}</span>
+                <button type="button" class="chip-remove" @click="removeAttachment">
+                  <SvgIcon name="close" width="12" height="12" />
+                </button>
+              </div>
             </div>
-          </div>
 
-          <MentionModal :visible="showMentionPanel" @close="closeMentionPanel" @select="handleMentionSelect" />
-        </div>
+            <!-- 设置区域 -->
+            <div class="settings-group">
+              <!-- 付费设置 -->
+              <button 
+                type="button" 
+                class="setting-btn" 
+                :class="{ active: form.paymentSettings.enabled }" 
+                @click="openPaymentModal"
+              >
+                <span class="setting-icon">🍒</span>
+                <span class="setting-label">
+                  <template v-if="form.paymentSettings.enabled">
+                    已设置付费 · {{ form.paymentSettings.price }} 石榴点
+                  </template>
+                  <template v-else>
+                    设置付费内容
+                  </template>
+                </span>
+                <SvgIcon name="right" width="16" height="16" class="setting-arrow" />
+              </button>
 
-        <div class="tag-section">
-          <div class="section-title">标签 (最多10个)</div>
-          <TagSelector v-model="form.tags" :max-tags="10" />
-        </div>
-      </form>
+              <!-- 可见性设置 -->
+              <VisibilitySelector v-model="form.visibility" />
+            </div>
 
-      <div v-if="isLoggedIn" class="publish-actions">
-        <button class="draft-btn" :disabled="!canSaveDraft || isSavingDraft" @click="handleSaveDraft">
-          {{ isSavingDraft ? '保存中...' : '存草稿' }}
-        </button>
-        <button class="publish-btn" :disabled="!canPublish || isPublishing" @click="handlePublish">
-          {{ isPublishing ? '发布中...' : '发布' }}
-        </button>
+            <!-- 标签选择 -->
+            <div class="form-group tags-group">
+              <div class="tags-header">
+                <span class="tags-label">添加标签</span>
+                <span class="tags-hint">最多10个</span>
+              </div>
+              <TagSelector v-model="form.tags" :max-tags="10" />
+            </div>
+
+            <!-- 发布按钮 -->
+            <div class="action-buttons">
+              <button 
+                type="button" 
+                class="action-btn secondary" 
+                :disabled="!canSaveDraft || isSavingDraft" 
+                @click="handleSaveDraft"
+              >
+                {{ isSavingDraft ? '保存中...' : '存草稿' }}
+              </button>
+              <button 
+                type="submit" 
+                class="action-btn primary" 
+                :disabled="!canPublish || isPublishing"
+              >
+                {{ isPublishing ? '发布中...' : '发布笔记' }}
+              </button>
+            </div>
+          </form>
+        </section>
       </div>
-    </div>
+
+      <!-- 表情面板 -->
+      <div v-if="showEmojiPanel" class="emoji-overlay" v-click-outside="closeEmojiPanel">
+        <div class="emoji-picker-wrapper" @click.stop>
+          <EmojiPicker @select="handleEmojiSelect" />
+        </div>
+      </div>
+
+      <MentionModal :visible="showMentionPanel" @close="closeMentionPanel" @select="handleMentionSelect" />
+    </main>
 
     <MessageToast v-if="showToast" :message="toastMessage" :type="toastType" @close="handleToastClose" />
 
@@ -260,8 +316,8 @@ const isEditMode = ref(false)
 const mentionUsers = ref([])
 
 const canPublish = computed(() => {
-  // 检查必填字段：标题、内容
-  if (!form.title.trim() || !form.content.trim()) {
+  // 检查必填字段：只需要内容（标题可选）
+  if (!form.content.trim()) {
     return false
   }
   
@@ -598,12 +654,7 @@ const handleInputKeydown = (event) => {
 const handlePublish = async () => {
 
   
-  // 验证必填字段
-  if (!form.title.trim()) {
-    showMessage('请输入标题', 'error')
-    return
-  }
-
+  // 验证必填字段（标题可选，只需要内容）
   if (!form.content.trim()) {
     showMessage('请输入内容', 'error')
     return
@@ -1022,227 +1073,252 @@ const handleSaveDraft = async () => {
 </script>
 
 <style scoped>
+/* 现代化设计系统 */
 .publish-container {
   min-height: 100vh;
-  background: var(--bg-color-primary);
+  background: linear-gradient(135deg, var(--bg-color-secondary) 0%, var(--bg-color-primary) 100%);
   color: var(--text-color-primary);
-  padding-bottom: calc(48px + constant(safe-area-inset-bottom));
-  padding-bottom: calc(48px + env(safe-area-inset-bottom));
-  margin: 72px auto;
-  min-width: 700px;
-  max-width: 700px;
-  transition: background-color 0.2s ease;
 }
 
+/* 头部样式 */
 .publish-header {
+  position: sticky;
+  top: 60px;
+  z-index: 100;
+  background: rgba(var(--bg-color-primary-rgb, 255, 255, 255), 0.8);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color-primary);
+}
+
+.header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem;
-  background: var(--bg-color-primary);
-  border-bottom: 1px solid var(--border-color-primary);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  transition: background-color 0.2s ease,border-color 0.2s ease;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.draft-box-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.draft-box-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.manage-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.manage-btn:hover {
-  background: var(--primary-color-dark);
 }
 
 .page-title {
-  font-size: 1.2rem;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
   margin: 0;
-  color: var(--text-color-primary);
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.title-icon {
+  font-size: 1.25rem;
 }
 
 .header-actions {
   display: flex;
-  align-items: center;
   gap: 0.75rem;
 }
 
-.draft-btn {
-  width: 20%;
-  padding: 12px;
-  background-color: var(--text-color-secondary);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
+.header-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.draft-btn:hover:not(:disabled) {
-  background: var(--text-color-primary);
-}
-
-.draft-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.publish-btn {
-  width: 20%;
-  padding: 12px;
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  transition: all 0.2s ease;
+  border: none;
 }
 
-.publish-btn:hover:not(:disabled) {
-  background: var(--primary-color-dark);
+.header-btn.secondary {
+  background: var(--bg-color-secondary);
+  color: var(--text-color-secondary);
+  border: 1px solid var(--border-color-primary);
 }
 
-.publish-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.header-btn.secondary:hover {
+  background: var(--bg-color-primary);
+  color: var(--text-color-primary);
+  border-color: var(--primary-color);
 }
 
-.loading-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.publish-content {
-  padding: 1rem;
-  max-width: 600px;
+/* 主内容区 */
+.publish-main {
+  max-width: 1200px;
   margin: 0 auto;
-  background-color: var(--bg-color-primary);
-  transition: background-color 0.2s ease;
+  padding: 2rem 1.5rem;
+}
+
+/* 登录提示 */
+.login-prompt {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.prompt-card {
+  text-align: center;
+  padding: 3rem;
+  background: var(--bg-color-primary);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.prompt-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+  border-radius: 50%;
+  margin-bottom: 1.5rem;
+}
+
+.prompt-icon {
+  color: white;
+}
+
+.prompt-card h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-color-primary);
+  margin: 0 0 0.5rem;
+}
+
+.prompt-card p {
+  color: var(--text-color-secondary);
+  margin: 0;
+}
+
+/* 两栏布局 */
+.publish-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+/* 区块卡片 */
+.section-card {
+  background: var(--bg-color-primary);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border-color-primary);
+}
+
+/* 媒体区域 */
+.media-section {
+  position: sticky;
+  top: 140px;
+}
+
+.media-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding: 4px;
+  background: var(--bg-color-secondary);
+  border-radius: 12px;
+}
+
+.media-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-color-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.media-tab:hover {
+  color: var(--text-color-primary);
+}
+
+.media-tab.active {
+  background: var(--bg-color-primary);
+  color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.upload-area {
+  min-height: 200px;
+}
+
+.media-tools {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color-primary);
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tool-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(var(--primary-color-rgb), 0.3);
+}
+
+/* 内容区域 */
+.content-section {
+  background: var(--bg-color-primary);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border-color-primary);
 }
 
 .publish-form {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
-.upload-section {
-  margin-bottom: 0.5rem;
-}
-
-.upload-tabs {
-  display: flex;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color-primary);
-}
-
-.tab-btn {
-  padding: 12px 24px;
-  border: none;
-  background: transparent;
-  color: var(--text-color-secondary);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-bottom: 2px solid transparent;
+.form-group {
   position: relative;
 }
 
-.tab-btn:hover {
-  color: var(--text-color-primary);
-}
-
-.tab-btn.active {
-  color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
-}
-
-.upload-content {
-  margin-bottom: 1rem;
-}
-
-.image-upload-section {
-  margin-bottom: 0.5rem;
-}
-
-.input-section {
+/* 标题输入 */
+.title-group .input-wrapper {
   position: relative;
 }
 
 .title-input {
   width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
+  padding: 1rem;
+  padding-right: 4rem;
+  border: 2px solid var(--border-color-primary);
+  border-radius: 12px;
+  background: var(--bg-color-secondary);
   color: var(--text-color-primary);
-  font-size: 16px;
-  font-weight: bold;
+  font-size: 1.125rem;
+  font-weight: 600;
   transition: all 0.2s ease;
   box-sizing: border-box;
 }
@@ -1250,199 +1326,267 @@ const handleSaveDraft = async () => {
 .title-input:focus {
   outline: none;
   border-color: var(--primary-color);
+  background: var(--bg-color-primary);
 }
 
 .title-input::placeholder {
-  color: var(--text-color-secondary);
+  color: var(--text-color-tertiary);
+  font-weight: 400;
 }
 
-.content-input-wrapper {
-  position: relative;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
+.char-indicator {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: var(--text-color-tertiary);
+}
+
+/* 内容输入 */
+.content-wrapper {
+  border: 2px solid var(--border-color-primary);
+  border-radius: 12px;
+  background: var(--bg-color-secondary);
   transition: all 0.2s ease;
+  overflow: hidden;
 }
 
-.content-input-wrapper:focus-within {
+.content-wrapper:focus-within {
   border-color: var(--primary-color);
+  background: var(--bg-color-primary);
 }
 
-.content-textarea {
+.content-editor {
   width: 100%;
+  min-height: 150px;
   padding: 1rem;
-  padding-bottom: 3rem;
   border: none;
-  border-radius: 8px;
   background: transparent;
   color: var(--text-color-primary);
-  font-size: 16px;
-  line-height: 1.5;
-  transition: all 0.2s ease;
-  min-height: 120px;
-  box-sizing: border-box;
-  caret-color: var(--primary-color);
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: none;
 }
 
-.content-textarea:focus {
+.content-editor:focus {
   outline: none;
 }
 
-.content-textarea:empty:before {
+.content-editor:empty:before {
   content: attr(placeholder);
-  color: var(--text-color-secondary);
-  pointer-events: none;
+  color: var(--text-color-tertiary);
 }
 
-.content-actions {
-  position: absolute;
-  bottom: 0.5rem;
-  left: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.emoji-btn,
-.mention-btn,
-.attachment-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-color-secondary);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.emoji-btn:hover,
-.mention-btn:hover,
-.attachment-btn:hover {
-  background: var(--bg-color-secondary);
-  color: var(--text-color-primary);
-}
-
-.emoji-icon,
-.mention-icon,
-.attachment-icon {
-  width: 20px;
-  height: 20px;
-}
-
-/* 附件预览样式 */
-.attachment-preview {
+.content-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  margin-top: 8px;
-  background: var(--bg-color-secondary);
-  border-radius: 6px;
-  border: 1px solid var(--border-color-primary);
-}
-
-.attachment-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-color-secondary);
-  overflow: hidden;
-}
-
-.attachment-name {
-  font-size: 13px;
-  color: var(--text-color-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-}
-
-.attachment-size {
-  font-size: 12px;
-  color: var(--text-color-tertiary);
-}
-
-.remove-attachment-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-color-tertiary);
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.remove-attachment-btn:hover {
-  background: var(--danger-color);
-  color: white;
-}
-
-/* 付费设置按钮样式 */
-.payment-settings-section {
-  margin-top: 12px;
-}
-
-.payment-settings-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 12px 16px;
-  background: var(--bg-color-secondary);
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--text-color-secondary);
-}
-
-.payment-settings-btn:hover {
-  border-color: var(--primary-color);
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-color-primary);
   background: var(--bg-color-primary);
 }
 
-.payment-settings-btn.active {
-  border-color: var(--primary-color);
-  background: rgba(var(--primary-color-rgb), 0.05);
+.content-tools {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-color-tertiary);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.icon-btn:hover {
+  background: var(--bg-color-secondary);
   color: var(--primary-color);
 }
 
-.payment-icon {
-  font-size: 18px;
-  line-height: 1;
+.content-footer .char-indicator {
+  position: static;
+  transform: none;
 }
 
-.payment-text {
+/* 附件芯片 */
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-color-secondary);
+  border: 1px solid var(--border-color-primary);
+  border-radius: 20px;
+  font-size: 0.875rem;
+}
+
+.chip-text {
+  color: var(--text-color-primary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-size {
+  color: var(--text-color-tertiary);
+  font-size: 0.75rem;
+}
+
+.chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: var(--text-color-tertiary);
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chip-remove:hover {
+  background: var(--danger-color);
+}
+
+/* 设置组 */
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.setting-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem;
+  background: var(--bg-color-secondary);
+  border: 2px solid var(--border-color-primary);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.setting-btn:hover {
+  border-color: var(--primary-color);
+}
+
+.setting-btn.active {
+  border-color: var(--primary-color);
+  background: rgba(var(--primary-color-rgb), 0.05);
+}
+
+.setting-icon {
+  font-size: 1.25rem;
+}
+
+.setting-label {
   flex: 1;
   text-align: left;
-  font-size: 14px;
+  font-size: 0.875rem;
+  color: var(--text-color-secondary);
 }
 
-.payment-arrow {
+.setting-btn.active .setting-label {
+  color: var(--primary-color);
+}
+
+.setting-arrow {
   color: var(--text-color-tertiary);
 }
 
-.payment-settings-btn.active .payment-arrow {
-  color: var(--primary-color);
+/* 标签组 */
+.tags-group {
+  padding-top: 0.5rem;
 }
 
-.emoji-panel-overlay {
+.tags-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.tags-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-color-primary);
+}
+
+.tags-hint {
+  font-size: 0.75rem;
+  color: var(--text-color-tertiary);
+}
+
+/* 操作按钮 */
+.action-buttons {
+  display: flex;
+  gap: 1rem;
+  padding-top: 1rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border-color-primary);
+}
+
+.action-btn {
+  flex: 1;
+  padding: 1rem;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-btn.secondary {
+  background: var(--bg-color-secondary);
+  color: var(--text-color-secondary);
+  border: 2px solid var(--border-color-primary);
+}
+
+.action-btn.secondary:hover:not(:disabled) {
+  background: var(--bg-color-primary);
+  border-color: var(--text-color-secondary);
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
+  color: white;
+}
+
+.action-btn.primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(var(--primary-color-rgb), 0.35);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* 表情面板 */
+.emoji-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1450,446 +1594,74 @@ const handleSaveDraft = async () => {
   animation: fadeIn 0.2s ease;
 }
 
-.emoji-panel {
+.emoji-picker-wrapper {
   background: var(--bg-color-primary);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   animation: scaleIn 0.2s ease;
-  max-width: 90vw;
-  max-height: 80vh;
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.char-count {
-  position: absolute;
-  bottom: 0.5rem;
-  right: 0.75rem;
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  background: var(--bg-color-primary);
-  padding: 0.25rem;
-  transition: background-color 0.2s ease;
-}
-
-
-.section-title {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-color-primary);
-  margin-bottom: 0.75rem;
-}
-
-.tag-input-wrapper {
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--bg-color-primary);
-  padding: 0.75rem;
-  transition: border-color 0.2s ease;
-}
-
-.tag-input-wrapper:focus-within {
-  border-color: var(--primary-color);
-}
-
-.selected-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.selected-tag {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.4rem 0.6rem;
-  background: var(--primary-color);
-  color: var(--button-text-color);
-  border-radius: 16px;
-  font-size: 0.8rem;
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.remove-tag-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: none;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.remove-tag-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: scale(1.1);
-}
-
-.tag-input-container {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.tag-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: var(--text-color-primary);
-  font-size: 0.9rem;
-  outline: none;
-  padding: 0.25rem 0;
-}
-
-.tag-input:disabled {
-  background-color: var(--disabled-bg);
-  cursor: not-allowed;
-}
-
-.tag-input::placeholder {
-  color: var(--text-color-secondary);
-}
-
-.add-tag-btn {
-  padding: 0.25rem 0.75rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.add-tag-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.tag-suggestions {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background: var(--bg-color-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color-primary);
-}
-
-.suggestions-title {
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.suggestions-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.tag-suggestion {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 16px;
-  background: var(--bg-color-primary);
-  color: var(--text-color-primary);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-suggestion:hover {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
-  color: white;
-}
-
-.recommended-tags {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background: var(--bg-color-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-color-primary);
-}
-
-.recommendations-title {
-  font-size: 0.8rem;
-  color: var(--text-color-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.tags-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.tag-item {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 16px;
-  background: var(--bg-color-primary);
-  color: var(--text-color-primary);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-item:hover {
-  border-color: var(--primary-color);
-  background: var(--primary-color);
-  color: white;
-}
-
-.tag-item.active {
-  background: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
-}
-
-
-
-.publish-actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
-  padding: 2rem 1rem;
-  margin-top: 2rem;
-  background: var(--bg-color-primary);
-}
-
-.publish-actions .cancel-btn {
-  padding: 0.75rem 1.5rem;
-  background: transparent;
-  color: var(--text-color-secondary);
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 100px;
-}
-
-
-
-.publish-actions .loading-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* 响应式设计 */
 @media (max-width: 960px) {
-  .publish-container {
-    min-width: 100%;
-    max-width: 100%;
-    margin: 72px 0;
+  .publish-layout {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
   }
 
-  .publish-header {
+  .media-section {
+    position: static;
+  }
+
+  .header-content {
     padding: 0.75rem 1rem;
   }
 
-  .header-right {
-    gap: 0.5rem;
-  }
-
-  .draft-box-btn,
-  .manage-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .publish-content {
-    padding: 0.75rem;
-  }
-
-  .publish-actions {
-    padding: 1rem 0.75rem;
-  }
-}
-
-/* 登录提示样式 */
-.login-prompt {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px 20px;
-  text-align: center;
-}
-
-.prompt-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.prompt-icon {
-  color: var(--text-color-quaternary);
-  margin-bottom: 16px;
-}
-
-.prompt-content h3 {
-  color: var(--text-color-primary);
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 8px 0;
-}
-
-.prompt-content p {
-  color: var(--text-color-secondary);
-  font-size: 14px;
-  margin: 0 0 20px 0;
-  line-height: 1.5;
-}
-
-.tag-input {
-  min-width: 80px;
-}
-
-.publish-actions {
-  padding: 1.5rem 0.75rem;
-  gap: 0.75rem;
-}
-
-.publish-actions .cancel-btn,
-.publish-actions .draft-btn,
-.publish-actions .publish-btn {
-  padding: 0.6rem 1.2rem;
-  font-size: 0.85rem;
-  min-width: 80px;
-}
-
-@media (max-width: 480px) {
-  .publish-header {
-    padding: 16px 14px;
-  }
-
   .page-title {
-    margin-left: 12px;
+    font-size: 1.25rem;
   }
 
-  .header-actions {
-    gap: 0.5rem;
+  .header-btn span {
+    display: none;
   }
 
-  .cancel-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
+  .header-btn {
+    padding: 0.5rem;
   }
+}
 
-  .draft-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .publish-btn {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-  }
-
-  .publish-content {
+@media (max-width: 640px) {
+  .publish-main {
     padding: 1rem;
   }
 
-
-  .tag-input {
-    min-width: 60px;
-    font-size: 0.85rem;
+  .section-card,
+  .content-section {
+    padding: 1rem;
+    border-radius: 12px;
   }
 
-  .publish-actions {
-    padding: 1rem 0.5rem;
-    gap: 0.5rem;
+  .title-input {
+    font-size: 1rem;
+    padding: 0.875rem;
+  }
+
+  .action-buttons {
     flex-direction: column;
   }
 
-}
-
-.text-image-section {
-  margin-top: 0.75rem;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.text-image-btn {
-  display: flex;
-  align-items: center;
-  padding: 0.4rem;
-  background: var(--primary-color);
-  color: var(--button-text-color);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.text-image-btn:hover {
-  background: var(--primary-color-dark);
-}
-
-.text-image-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
-}
-
-.publish-actions .cancel-btn,
-.publish-actions .draft-btn,
-.publish-actions .publish-btn {
-  width: 100%;
-  padding: 0.75rem;
-  font-size: 0.9rem;
-  min-width: unset;
+  .action-btn {
+    padding: 0.875rem;
+  }
 }
 </style>

@@ -753,8 +753,8 @@ router.post('/', authenticateToken, async (req, res) => {
     const { title, content, category_id, type = 1, images = [], video, tags = [], is_draft = false, paymentSettings, attachment, visibility = VISIBILITY_PUBLIC } = req.body;
     const userId = BigInt(req.user.id);
 
-    if (!title || !content) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '标题和内容不能为空' });
+    if (!content) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '内容不能为空' });
     }
 
     // Validate visibility value
@@ -766,7 +766,7 @@ router.post('/', authenticateToken, async (req, res) => {
     const newPost = await prisma.post.create({
       data: {
         user_id: userId,
-        title,
+        title: title || '',
         content: sanitizedContent,
         category_id: category_id ? parseInt(category_id) : null,
         type: parseInt(type),
