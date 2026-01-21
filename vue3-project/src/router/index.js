@@ -196,6 +196,12 @@ const router = createRouter({
         }
       ]
     },
+    // 公开API文档页面（无需认证）
+    {
+      path: '/api-docs-xise2025public',
+      name: 'public_api_docs',
+      component: () => import('@/views/api-docs/index.vue')
+    },
     // Admin登录页面
     {
       path: '/admin/login',

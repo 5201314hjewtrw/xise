@@ -40,6 +40,12 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',//后端接口地址
         changeOrigin: true,
+        // 排除api-docs开头的路由，这些是前端页面
+        bypass: (req) => {
+          if (req.url.startsWith('/api-docs')) {
+            return req.url
+          }
+        },
         rewrite: (path) => path.replace(/^\/api/, '/api')
       },
       '/qhimgs1': {
