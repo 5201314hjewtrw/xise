@@ -39,6 +39,7 @@ import ContentReviewManagement from '@/views/admin/ContentReviewManagement.vue'
 import QueueManagement from '@/views/admin/QueueManagement.vue'
 import BannedWordsManagement from '@/views/admin/BannedWordsManagement.vue'
 import SystemNotificationManagement from '@/views/admin/SystemNotificationManagement.vue'
+import NoteQualityManagement from '@/views/admin/NoteQualityManagement.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -307,6 +308,11 @@ const router = createRouter({
           path: 'user-toolbar',
           name: 'admin_user_toolbar',
           component: () => import('@/views/admin/ToolbarManagement.vue')
+        },
+        {
+          path: 'note-quality',
+          name: 'admin_note_quality',
+          component: NoteQualityManagement
         }
       ]
     }

@@ -309,21 +309,32 @@ enum PostVisibility {
   friends_only // 仅互关好友可见
 }
 
+// 笔记质量等级枚举
+enum PostQualityLevel {
+  none // 未标记
+  low // 低质量
+  medium // 中质量
+  high // 高质量
+}
+
 // 笔记表
 model Post {
-  id            BigInt         @id @default(autoincrement())
-  user_id       BigInt
-  title         String         @db.VarChar(200)
-  content       String         @db.Text
-  category_id   Int?
-  type          Int            @default(1)
-  view_count    BigInt         @default(0)
-  like_count    Int            @default(0)
-  collect_count Int            @default(0)
-  comment_count Int            @default(0)
-  created_at    DateTime       @default(now())
-  is_draft      Boolean        @default(true)
-  visibility    PostVisibility @default(public)
+  id               BigInt           @id @default(autoincrement())
+  user_id          BigInt
+  title            String           @db.VarChar(200)
+  content          String           @db.Text
+  category_id      Int?
+  type             Int              @default(1)
+  view_count       BigInt           @default(0)
+  like_count       Int              @default(0)
+  collect_count    Int              @default(0)
+  comment_count    Int              @default(0)
+  created_at       DateTime         @default(now())
+  is_draft         Boolean          @default(true)
+  visibility       PostVisibility   @default(public)
+  quality_level    PostQualityLevel @default(none) // 质量等级
+  quality_marked_at DateTime?       // 质量标记时间
+  quality_reward   Decimal?         @db.Decimal(10, 2) // 质量奖励金额
 
   user            User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
   category        Category?              @relation(fields: [category_id], references: [id], onDelete: SetNull)
@@ -343,6 +354,7 @@ model Post {
   @@index([like_count], name: "idx_like_count")
   @@index([category_id, created_at], name: "idx_category_id_created_at")
   @@index([visibility], name: "idx_visibility")
+  @@index([quality_level], name: "idx_quality_level")
   @@map("posts")
 }
 
@@ -358,6 +370,19 @@ model SystemSetting {
 
   @@index([setting_group], name: "idx_setting_group")
   @@map("system_settings")
+}
+
+// 笔记质量奖励设置表
+model PostQualityRewardSetting {
+  id                  Int      @id @default(autoincrement())
+  quality_level       String   @unique @db.VarChar(20) // low, medium, high
+  reward_amount       Decimal  @default(0.00) @db.Decimal(10, 2) // 奖励金额
+  description         String?  @db.VarChar(255) // 描述
+  is_active           Boolean  @default(true) // 是否启用
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  @@map("post_quality_reward_settings")
 }
 
 // 系统通知类型枚举

@@ -845,6 +845,108 @@ router.post('/claim-incentive', authenticateToken, async (req, res) => {
   }
 });
 
+// 获取质量奖励收益详情
+router.get('/quality-rewards', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userIdBigInt = BigInt(userId);
+    const { page = 1, limit = 20 } = req.query;
+    
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+    
+    // 获取质量奖励类型的收益记录
+    const where = { 
+      user_id: userIdBigInt,
+      type: 'quality_reward'
+    };
+    
+    const [logs, total, totalAmount] = await Promise.all([
+      prisma.creatorEarningsLog.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: limitNum
+      }),
+      prisma.creatorEarningsLog.count({ where }),
+      prisma.creatorEarningsLog.aggregate({
+        where,
+        _sum: { amount: true }
+      })
+    ]);
+    
+    // 获取关联的笔记信息
+    const logsWithPost = await Promise.all(logs.map(async (log) => {
+      let post = null;
+      if (log.source_id && log.source_type === 'post') {
+        post = await prisma.post.findUnique({
+          where: { id: log.source_id },
+          select: { 
+            id: true, 
+            title: true, 
+            type: true,
+            quality_level: true,
+            created_at: true,
+            images: { take: 1, select: { image_url: true } },
+            videos: { take: 1, select: { cover_url: true } }
+          }
+        });
+      }
+      
+      return {
+        id: log.id,
+        amount: parseFloat(log.amount),
+        reason: log.reason,
+        post: post ? {
+          id: Number(post.id),
+          title: post.title,
+          type: post.type,
+          quality_level: post.quality_level,
+          cover: post.type === 2 
+            ? (post.videos[0]?.cover_url || null)
+            : (post.images[0]?.image_url || null),
+          created_at: post.created_at
+        } : null,
+        created_at: log.created_at
+      };
+    }));
+    
+    // 按质量等级统计
+    const qualityStats = await prisma.$queryRaw`
+      SELECT 
+        SUBSTRING(reason FROM '笔记质量奖励: (.+)') as quality_label,
+        COUNT(*) as count,
+        COALESCE(SUM(amount), 0) as total_amount
+      FROM creator_earnings_log
+      WHERE user_id = ${userIdBigInt} AND type = 'quality_reward'
+      GROUP BY SUBSTRING(reason FROM '笔记质量奖励: (.+)')
+    `.catch(() => []);
+    
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: {
+        list: logsWithPost,
+        total_earnings: parseFloat(totalAmount._sum?.amount) || 0,
+        stats: qualityStats,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum)
+        }
+      },
+      message: 'success'
+    });
+  } catch (error) {
+    console.error('获取质量奖励详情失败:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      code: RESPONSE_CODES.ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR
+    });
+  }
+});
+
 // 导出模块和辅助函数
 module.exports = router;
 module.exports.addCreatorEarnings = addCreatorEarnings;
