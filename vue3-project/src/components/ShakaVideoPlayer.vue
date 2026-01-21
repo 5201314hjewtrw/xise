@@ -183,6 +183,7 @@
  */
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import SvgIcon from './SvgIcon.vue'
+import { isWebView, isIOSDevice, supportsFullscreenAPI, supportsNativeVideoFullscreen } from '@/utils/webviewDetection'
 
 // 动态导入 Shaka Player 以避免 SSR 问题和实现代码分割
 let shaka = null
@@ -662,20 +663,42 @@ const selectQuality = (quality) => {
   showQualityMenu.value = false
 }
 
+// 检测是否处于原生视频全屏状态（用于 iOS WebView）
+let isInNativeVideoFullscreen = false
+
 // 切换全屏
 const toggleFullscreen = async () => {
   try {
-    // 检查当前是否处于全屏状态
+    // 检查当前是否处于全屏状态（包括原生视频全屏）
     const isCurrentlyFullscreen = 
       document.fullscreenElement ||
       document.webkitFullscreenElement ||
       document.mozFullScreenElement ||
-      document.msFullscreenElement
+      document.msFullscreenElement ||
+      isInNativeVideoFullscreen
     
     if (!isCurrentlyFullscreen) {
-      // 进入全屏 - 支持多种浏览器 API
+      // 进入全屏
       const element = videoContainer.value
       
+      // 在 WebView 环境下优先使用原生视频全屏，因为容器全屏 API 可能不被支持
+      // 这解决了 Android/iOS WebView 中全屏功能失效的问题
+      if (isWebView() && videoElement.value?.webkitEnterFullscreen) {
+        console.log('🎬 [ShakaVideoPlayer] WebView 环境，使用原生视频全屏')
+        isInNativeVideoFullscreen = true
+        videoElement.value.webkitEnterFullscreen()
+        return
+      }
+      
+      // iOS 设备（非 Safari 浏览器）也优先使用原生视频全屏
+      if (isIOSDevice() && videoElement.value?.webkitEnterFullscreen && !supportsFullscreenAPI()) {
+        console.log('🎬 [ShakaVideoPlayer] iOS 设备，使用原生视频全屏')
+        isInNativeVideoFullscreen = true
+        videoElement.value.webkitEnterFullscreen()
+        return
+      }
+      
+      // 标准全屏 API
       if (element.requestFullscreen) {
         await element.requestFullscreen()
       } else if (element.webkitRequestFullscreen) {
@@ -688,13 +711,23 @@ const toggleFullscreen = async () => {
         // IE11
         await element.msRequestFullscreen()
       } else if (videoElement.value?.webkitEnterFullscreen) {
-        // iOS Safari 视频元素专用 (容器不支持时的回退方案)
+        // 容器不支持时的回退方案 - 使用原生视频全屏
+        console.log('🎬 [ShakaVideoPlayer] 容器全屏不支持，使用原生视频全屏')
+        isInNativeVideoFullscreen = true
         videoElement.value.webkitEnterFullscreen()
       } else {
         console.warn('浏览器不支持全屏功能')
       }
     } else {
-      // 退出全屏 - 支持多种浏览器 API
+      // 退出全屏
+      if (isInNativeVideoFullscreen && videoElement.value?.webkitExitFullscreen) {
+        // 原生视频全屏退出
+        videoElement.value.webkitExitFullscreen()
+        isInNativeVideoFullscreen = false
+        return
+      }
+      
+      // 标准全屏 API 退出
       if (document.exitFullscreen) {
         await document.exitFullscreen()
       } else if (document.webkitExitFullscreen) {
@@ -705,6 +738,7 @@ const toggleFullscreen = async () => {
         await document.msExitFullscreen()
       } else if (videoElement.value?.webkitExitFullscreen) {
         videoElement.value.webkitExitFullscreen()
+        isInNativeVideoFullscreen = false
       }
     }
   } catch (err) {
@@ -1074,13 +1108,17 @@ const setupVideoListeners = () => {
   document.addEventListener('mozfullscreenchange', fullscreenStateHandler)
   document.addEventListener('MSFullscreenChange', fullscreenStateHandler)
   
-  // iOS Safari 特殊处理
+  // iOS Safari/WebView 原生视频全屏处理
   if (videoElement.value) {
     webkitBeginFullscreenHandler = () => {
+      console.log('🎬 [ShakaVideoPlayer] 原生视频全屏开始')
       isFullscreen.value = true
+      isInNativeVideoFullscreen = true
     }
     webkitEndFullscreenHandler = () => {
+      console.log('🎬 [ShakaVideoPlayer] 原生视频全屏结束')
       isFullscreen.value = false
+      isInNativeVideoFullscreen = false
     }
     
     videoElement.value.addEventListener('webkitbeginfullscreen', webkitBeginFullscreenHandler)
@@ -1097,6 +1135,13 @@ let visibilityChangeHandler = null
 
 const setupVisibilityListener = () => {
   visibilityChangeHandler = () => {
+    // 在全屏模式下不暂停视频
+    // 这解决了 WebView 中进入全屏时触发 visibilitychange 导致视频暂停和帖子刷新的问题
+    if (isFullscreen.value || isInNativeVideoFullscreen) {
+      console.log('🎬 [ShakaVideoPlayer] 全屏模式下忽略页面隐藏事件')
+      return
+    }
+    
     if (document.hidden && videoElement.value && !videoElement.value.paused) {
       console.log('🎬 [ShakaVideoPlayer] 页面隐藏，暂停视频播放')
       videoElement.value.pause()
