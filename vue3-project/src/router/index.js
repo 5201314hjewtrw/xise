@@ -40,6 +40,7 @@ import QueueManagement from '@/views/admin/QueueManagement.vue'
 import BannedWordsManagement from '@/views/admin/BannedWordsManagement.vue'
 import SystemNotificationManagement from '@/views/admin/SystemNotificationManagement.vue'
 import NoteQualityManagement from '@/views/admin/NoteQualityManagement.vue'
+import SystemSettingsManagement from '@/views/admin/SystemSettingsManagement.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -313,6 +314,11 @@ const router = createRouter({
           path: 'note-quality',
           name: 'admin_note_quality',
           component: NoteQualityManagement
+        },
+        {
+          path: 'system-settings',
+          name: 'admin_system_settings',
+          component: SystemSettingsManagement
         }
       ]
     }

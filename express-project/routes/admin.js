@@ -7,39 +7,167 @@ const { auditComment } = require('../utils/contentAudit')
 const { batchCleanupFiles } = require('../utils/fileCleanup')
 const { getQueueStats, getQueueJobs, getJobDetails, retryJob, cleanQueue, isQueueEnabled, QUEUE_NAMES } = require('../utils/queueService')
 const crypto = require('crypto')
+const settingsService = require('../utils/settingsService')
 
 // ===================== AI审核设置 =====================
-// 分开的AI审核开关：用户名审核和内容审核
-let aiUsernameReviewEnabled = false  // 用户名/昵称是否使用AI审核
-let aiContentReviewEnabled = false   // 内容（评论、简介等）是否使用AI审核
+// 使用 Redis 持久化的设置服务
 
 // 兼容旧接口：获取整体AI审核状态
 router.get('/ai-review-status', adminAuth, (req, res) => {
+  const usernameEnabled = settingsService.isAiUsernameReviewEnabled()
+  const contentEnabled = settingsService.isAiContentReviewEnabled()
   res.json({ 
     code: RESPONSE_CODES.SUCCESS, 
     data: { 
-      enabled: aiUsernameReviewEnabled || aiContentReviewEnabled,
-      username_enabled: aiUsernameReviewEnabled,
-      content_enabled: aiContentReviewEnabled
+      enabled: usernameEnabled || contentEnabled,
+      username_enabled: usernameEnabled,
+      content_enabled: contentEnabled
     }, 
     message: 'success' 
   })
 })
 
 // 兼容旧接口：切换整体AI审核（同时切换用户名和内容审核）
-router.post('/ai-review-toggle', adminAuth, (req, res) => {
+router.post('/ai-review-toggle', adminAuth, async (req, res) => {
   const { enabled } = req.body
   const newValue = Boolean(enabled)
-  aiUsernameReviewEnabled = newValue
-  aiContentReviewEnabled = newValue
+  await settingsService.setAiUsernameReviewEnabled(newValue)
+  await settingsService.setAiContentReviewEnabled(newValue)
   res.json({ code: RESPONSE_CODES.SUCCESS, message: `AI自动审核已${newValue ? '开启' : '关闭'}` })
 })
 
-// 导出函数供其他模块使用
-const isAiUsernameReviewEnabled = () => aiUsernameReviewEnabled
-const isAiContentReviewEnabled = () => aiContentReviewEnabled
+// 导出函数供其他模块使用（使用 settingsService）
+const isAiUsernameReviewEnabled = () => settingsService.isAiUsernameReviewEnabled()
+const isAiContentReviewEnabled = () => settingsService.isAiContentReviewEnabled()
 // 兼容旧的函数名
-const isAiAutoReviewEnabled = () => aiUsernameReviewEnabled || aiContentReviewEnabled
+const isAiAutoReviewEnabled = () => settingsService.isAiAutoReviewEnabled()
+
+// ===================== 游客访问限制设置 =====================
+
+// 获取游客访问限制状态
+router.get('/guest-access-status', adminAuth, (req, res) => {
+  const restricted = settingsService.isGuestAccessRestricted()
+  res.json({ 
+    code: RESPONSE_CODES.SUCCESS, 
+    data: { restricted }, 
+    message: 'success' 
+  })
+})
+
+// 切换游客访问限制
+router.post('/guest-access-toggle', adminAuth, async (req, res) => {
+  const { restricted } = req.body
+  const newValue = Boolean(restricted)
+  await settingsService.setGuestAccessRestricted(newValue)
+  res.json({ code: RESPONSE_CODES.SUCCESS, message: `游客访问限制已${newValue ? '开启' : '关闭'}` })
+})
+
+// ===================== 系统设置 (System Settings) =====================
+
+// 获取所有系统设置（用于管理后台显示）
+router.get('/settings', adminAuth, async (req, res) => {
+  try {
+    const allSettings = await settingsService.getAllSettings()
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      data: allSettings, 
+      message: 'success' 
+    })
+  } catch (error) {
+    console.error('获取设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取设置失败' })
+  }
+})
+
+// 获取系统设置（分类展示）
+router.get('/system-settings', adminAuth, async (req, res) => {
+  try {
+    const settings = {
+      // 访问控制设置
+      access_control: {
+        label: '访问控制',
+        settings: {
+          guest_access_restricted: {
+            label: '禁止游客访问',
+            description: '启用后，未登录用户无法访问笔记、评论、搜索、标签等内容',
+            value: settingsService.isGuestAccessRestricted(),
+            type: 'boolean'
+          }
+        }
+      },
+      // AI审核设置
+      ai_review: {
+        label: 'AI审核',
+        settings: {
+          ai_username_review_enabled: {
+            label: '用户名AI审核',
+            description: '启用后，用户昵称将通过AI进行内容审核',
+            value: settingsService.isAiUsernameReviewEnabled(),
+            type: 'boolean'
+          },
+          ai_content_review_enabled: {
+            label: '内容AI审核',
+            description: '启用后，评论等内容将通过AI进行审核',
+            value: settingsService.isAiContentReviewEnabled(),
+            type: 'boolean'
+          }
+        }
+      }
+    }
+    
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      data: settings, 
+      message: 'success' 
+    })
+  } catch (error) {
+    console.error('获取系统设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取系统设置失败' })
+  }
+})
+
+// 更新系统设置（批量更新）
+router.put('/system-settings', adminAuth, async (req, res) => {
+  try {
+    const { settings } = req.body
+    const messages = []
+    
+    if (settings) {
+      // 处理访问控制设置
+      if (settings.guest_access_restricted !== undefined) {
+        await settingsService.setGuestAccessRestricted(Boolean(settings.guest_access_restricted))
+        messages.push(`游客访问限制已${settings.guest_access_restricted ? '开启' : '关闭'}`)
+      }
+      
+      // 处理AI审核设置
+      if (settings.ai_username_review_enabled !== undefined) {
+        await settingsService.setAiUsernameReviewEnabled(Boolean(settings.ai_username_review_enabled))
+        messages.push(`用户名AI审核已${settings.ai_username_review_enabled ? '开启' : '关闭'}`)
+      }
+      
+      if (settings.ai_content_review_enabled !== undefined) {
+        await settingsService.setAiContentReviewEnabled(Boolean(settings.ai_content_review_enabled))
+        messages.push(`内容AI审核已${settings.ai_content_review_enabled ? '开启' : '关闭'}`)
+      }
+    }
+    
+    // 返回更新后的设置
+    const updatedSettings = {
+      guest_access_restricted: settingsService.isGuestAccessRestricted(),
+      ai_username_review_enabled: settingsService.isAiUsernameReviewEnabled(),
+      ai_content_review_enabled: settingsService.isAiContentReviewEnabled()
+    }
+    
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      message: messages.length > 0 ? messages.join('，') : '设置已更新',
+      data: updatedSettings
+    })
+  } catch (error) {
+    console.error('更新系统设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新系统设置失败' })
+  }
+})
 
 // ===================== 笔记管理 =====================
 router.get('/posts', adminAuth, async (req, res) => {
@@ -2329,13 +2457,15 @@ router.get('/content-review', adminAuth, async (req, res) => {
 
 // 获取AI审核设置 - 必须在 /:id 路由之前定义，避免被匹配
 router.get('/content-review/settings', adminAuth, async (req, res) => {
+  const usernameEnabled = settingsService.isAiUsernameReviewEnabled()
+  const contentEnabled = settingsService.isAiContentReviewEnabled()
   res.json({
     code: RESPONSE_CODES.SUCCESS,
     message: '获取设置成功',
     data: { 
-      ai_auto_review: aiUsernameReviewEnabled || aiContentReviewEnabled,
-      ai_username_review: aiUsernameReviewEnabled,
-      ai_content_review: aiContentReviewEnabled
+      ai_auto_review: usernameEnabled || contentEnabled,
+      ai_username_review: usernameEnabled,
+      ai_content_review: contentEnabled
     }
   })
 })
@@ -2347,36 +2477,40 @@ router.put('/content-review/settings', adminAuth, async (req, res) => {
     
     // 支持分开设置用户名审核和内容审核
     if (ai_username_review !== undefined) {
-      aiUsernameReviewEnabled = !!ai_username_review
+      await settingsService.setAiUsernameReviewEnabled(!!ai_username_review)
     }
     if (ai_content_review !== undefined) {
-      aiContentReviewEnabled = !!ai_content_review
+      await settingsService.setAiContentReviewEnabled(!!ai_content_review)
     }
     // 兼容旧接口：如果只传了ai_auto_review，则同时设置两个开关
     if (ai_auto_review !== undefined && ai_username_review === undefined && ai_content_review === undefined) {
       const newValue = !!ai_auto_review
-      aiUsernameReviewEnabled = newValue
-      aiContentReviewEnabled = newValue
+      await settingsService.setAiUsernameReviewEnabled(newValue)
+      await settingsService.setAiContentReviewEnabled(newValue)
     }
+
+    // 获取更新后的值
+    const usernameEnabled = settingsService.isAiUsernameReviewEnabled()
+    const contentEnabled = settingsService.isAiContentReviewEnabled()
 
     const messages = []
     if (ai_username_review !== undefined) {
-      messages.push(`用户名AI审核已${aiUsernameReviewEnabled ? '开启' : '关闭'}`)
+      messages.push(`用户名AI审核已${usernameEnabled ? '开启' : '关闭'}`)
     }
     if (ai_content_review !== undefined) {
-      messages.push(`内容AI审核已${aiContentReviewEnabled ? '开启' : '关闭'}`)
+      messages.push(`内容AI审核已${contentEnabled ? '开启' : '关闭'}`)
     }
     if (messages.length === 0 && ai_auto_review !== undefined) {
-      messages.push(`AI自动审核已${aiUsernameReviewEnabled ? '开启' : '关闭'}`)
+      messages.push(`AI自动审核已${usernameEnabled ? '开启' : '关闭'}`)
     }
 
     res.json({
       code: RESPONSE_CODES.SUCCESS,
       message: messages.join('，') || '设置已更新',
       data: { 
-        ai_auto_review: aiUsernameReviewEnabled || aiContentReviewEnabled,
-        ai_username_review: aiUsernameReviewEnabled,
-        ai_content_review: aiContentReviewEnabled
+        ai_auto_review: usernameEnabled || contentEnabled,
+        ai_username_review: usernameEnabled,
+        ai_content_review: contentEnabled
       }
     })
   } catch (error) {
