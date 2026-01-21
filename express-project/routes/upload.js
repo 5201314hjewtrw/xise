@@ -201,6 +201,63 @@ router.post('/single', authenticateToken, upload.single('file'), async (req, res
   }
 });
 
+/**
+ * @swagger
+ * /upload/multiple:
+ *   post:
+ *     summary: 多图片上传
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - files
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: 图片文件（最多9个）
+ *               watermark:
+ *                 type: boolean
+ *                 description: 是否添加水印
+ *               watermarkOpacity:
+ *                 type: integer
+ *                 minimum: 10
+ *                 maximum: 100
+ *                 description: 水印透明度
+ *     responses:
+ *       200:
+ *         description: 上传成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       url:
+ *                         type: string
+ *                         description: 图片URL
+ *       400:
+ *         description: 没有上传文件
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 上传失败
+ */
 // 多图片上传到图床
 router.post('/multiple', authenticateToken, upload.array('files', 9), async (req, res) => {
   try {
@@ -291,6 +348,61 @@ router.post('/multiple', authenticateToken, upload.array('files', 9), async (req
   }
 });
 
+/**
+ * @swagger
+ * /upload/video:
+ *   post:
+ *     summary: 视频上传
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: 视频文件
+ *               thumbnail:
+ *                 type: string
+ *                 format: binary
+ *                 description: 视频封面图片（可选）
+ *               watermark:
+ *                 type: boolean
+ *                 description: 是否添加水印
+ *     responses:
+ *       200:
+ *         description: 上传成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     videoUrl:
+ *                       type: string
+ *                       description: 视频URL
+ *                     coverUrl:
+ *                       type: string
+ *                       description: 封面图URL
+ *       400:
+ *         description: 没有上传视频文件
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 上传失败
+ */
 // 单视频上传到图床
 router.post('/video', authenticateToken, videoUpload.fields([
   { name: 'file', maxCount: 1 },
@@ -429,6 +541,43 @@ const chunkUpload = multer({
   }
 });
 
+/**
+ * @swagger
+ * /upload/chunk/config:
+ *   get:
+ *     summary: 获取分片上传配置
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回分片配置
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     chunkSize:
+ *                       type: integer
+ *                       description: 分片大小（字节）
+ *                     maxFileSize:
+ *                       type: integer
+ *                       description: 最大文件大小（字节）
+ *                     imageMaxSize:
+ *                       type: integer
+ *                       description: 图片最大大小（字节）
+ *                     imageChunkThreshold:
+ *                       type: integer
+ *                       description: 图片分片阈值（字节）
+ *       401:
+ *         description: 未授权
+ */
 // 获取分片上传配置
 router.get('/chunk/config', authenticateToken, (req, res) => {
   res.json({
@@ -443,6 +592,59 @@ router.get('/chunk/config', authenticateToken, (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /upload/chunk/verify:
+ *   get:
+ *     summary: 验证分片是否已存在（用于秒传/断点续传）
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: identifier
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 文件唯一标识符
+ *       - in: query
+ *         name: chunkNumber
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 分片编号
+ *       - in: query
+ *         name: md5
+ *         schema:
+ *           type: string
+ *         description: 分片MD5值
+ *     responses:
+ *       200:
+ *         description: 验证完成
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     exists:
+ *                       type: boolean
+ *                       description: 分片是否存在
+ *                     valid:
+ *                       type: boolean
+ *                       description: 分片是否有效
+ *       400:
+ *         description: 缺少必要参数
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 验证分片是否已存在（用于秒传/断点续传）
 router.get('/chunk/verify', authenticateToken, async (req, res) => {
   try {
@@ -474,6 +676,74 @@ router.get('/chunk/verify', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /upload/chunk:
+ *   post:
+ *     summary: 上传分片
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - identifier
+ *               - chunkNumber
+ *               - totalChunks
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: 分片文件
+ *               identifier:
+ *                 type: string
+ *                 description: 文件唯一标识符
+ *               chunkNumber:
+ *                 type: integer
+ *                 description: 当前分片编号
+ *               totalChunks:
+ *                 type: integer
+ *                 description: 总分片数
+ *               filename:
+ *                 type: string
+ *                 description: 文件名
+ *     responses:
+ *       200:
+ *         description: 分片上传成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     chunkNumber:
+ *                       type: integer
+ *                     uploaded:
+ *                       type: integer
+ *                       description: 已上传分片数
+ *                     total:
+ *                       type: integer
+ *                       description: 总分片数
+ *                     complete:
+ *                       type: boolean
+ *                       description: 是否已完成所有分片上传
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 上传分片
 router.post('/chunk', authenticateToken, chunkUpload.single('file'), async (req, res) => {
   try {
@@ -529,6 +799,61 @@ router.post('/chunk', authenticateToken, chunkUpload.single('file'), async (req,
   }
 });
 
+/**
+ * @swagger
+ * /upload/chunk/merge:
+ *   post:
+ *     summary: 合并视频分片
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - identifier
+ *               - totalChunks
+ *               - filename
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *                 description: 文件唯一标识符
+ *               totalChunks:
+ *                 type: integer
+ *                 description: 总分片数
+ *               filename:
+ *                 type: string
+ *                 description: 文件名
+ *     responses:
+ *       200:
+ *         description: 合并成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     videoUrl:
+ *                       type: string
+ *                       description: 视频URL
+ *                     coverUrl:
+ *                       type: string
+ *                       description: 封面URL
+ *       400:
+ *         description: 请求参数错误或分片不完整
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 合并分片
 router.post('/chunk/merge', authenticateToken, async (req, res) => {
   try {
@@ -629,6 +954,66 @@ router.post('/chunk/merge', authenticateToken, async (req, res) => {
 
 // 注意：使用云端图床后，文件删除由图床服务商管理
 
+/**
+ * @swagger
+ * /upload/chunk/merge/image:
+ *   post:
+ *     summary: 合并图片分片
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - identifier
+ *               - totalChunks
+ *               - filename
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *                 description: 文件唯一标识符
+ *               totalChunks:
+ *                 type: integer
+ *                 description: 总分片数
+ *               filename:
+ *                 type: string
+ *                 description: 文件名
+ *               watermark:
+ *                 type: boolean
+ *                 description: 是否添加水印
+ *               watermarkOpacity:
+ *                 type: integer
+ *                 minimum: 10
+ *                 maximum: 100
+ *                 description: 水印透明度
+ *     responses:
+ *       200:
+ *         description: 合并成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                       description: 图片URL
+ *       400:
+ *         description: 请求参数错误或分片不完整
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 合并图片分片
 router.post('/chunk/merge/image', authenticateToken, async (req, res) => {
   try {
@@ -754,6 +1139,57 @@ const attachmentUpload = multer({
   }
 });
 
+/**
+ * @swagger
+ * /upload/attachment:
+ *   post:
+ *     summary: 附件上传
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: 附件文件（支持zip、rar、pdf、doc、xls、ppt等格式）
+ *     responses:
+ *       200:
+ *         description: 上传成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                       description: 附件URL
+ *                     filename:
+ *                       type: string
+ *                       description: 文件名
+ *                     filesize:
+ *                       type: integer
+ *                       description: 文件大小（字节）
+ *       400:
+ *         description: 没有上传文件或文件类型不支持
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 上传失败
+ */
 // 附件上传
 router.post('/attachment', authenticateToken, attachmentUpload.single('file'), async (req, res) => {
   try {

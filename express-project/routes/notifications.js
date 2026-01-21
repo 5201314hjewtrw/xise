@@ -685,6 +685,42 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/{id}/read:
+ *   put:
+ *     summary: 标记通知为已读
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 通知ID
+ *     responses:
+ *       200:
+ *         description: 标记成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 标记成功
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 通知不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 标记通知为已读
 router.put('/:id/read', authenticateToken, async (req, res) => {
   try {
@@ -713,6 +749,33 @@ router.put('/:id/read', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/read-all:
+ *   put:
+ *     summary: 标记所有通知为已读
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 全部标记成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 全部标记成功
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 标记所有通知为已读
 router.put('/read-all', authenticateToken, async (req, res) => {
   try {
@@ -731,6 +794,42 @@ router.put('/read-all', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/{id}:
+ *   delete:
+ *     summary: 删除通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 通知ID
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 删除成功
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 通知不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 删除通知
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
@@ -753,6 +852,48 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/unread-count-by-type:
+ *   get:
+ *     summary: 获取按类型分组的未读通知数量
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回按类型分组的未读数量
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     comments:
+ *                       type: integer
+ *                       description: 评论通知未读数
+ *                     likes:
+ *                       type: integer
+ *                       description: 点赞通知未读数
+ *                     collections:
+ *                       type: integer
+ *                       description: 收藏通知未读数
+ *                     follows:
+ *                       type: integer
+ *                       description: 关注通知未读数
+ *                     total:
+ *                       type: integer
+ *                       description: 总未读数
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取按类型分组的未读通知数量
 router.get('/unread-count-by-type', authenticateToken, async (req, res) => {
   try {
@@ -794,6 +935,37 @@ router.get('/unread-count-by-type', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/unread-count:
+ *   get:
+ *     summary: 获取未读通知数量
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回未读通知数量
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     count:
+ *                       type: integer
+ *                       description: 未读通知数量
+ *                       example: 5
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取未读通知数量
 router.get('/unread-count', authenticateToken, async (req, res) => {
   try {
