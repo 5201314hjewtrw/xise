@@ -43,6 +43,43 @@ async function deleteCommentRecursive(commentId) {
   return deletedCount;
 }
 
+/**
+ * @swagger
+ * /comments:
+ *   get:
+ *     summary: 获取评论列表
+ *     tags: [评论]
+ *     parameters:
+ *       - in: query
+ *         name: post_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 笔记ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *     responses:
+ *       200:
+ *         description: 成功返回评论列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       400:
+ *         description: 缺少笔记ID
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取评论列表
 router.get('/', optionalAuthWithGuestRestriction, async (req, res) => {
   try {
@@ -178,6 +215,52 @@ router.get('/', optionalAuthWithGuestRestriction, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /comments:
+ *   post:
+ *     summary: 创建评论
+ *     tags: [评论]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - post_id
+ *               - content
+ *             properties:
+ *               post_id:
+ *                 type: integer
+ *                 description: 笔记ID
+ *               content:
+ *                 type: string
+ *                 description: 评论内容
+ *               parent_id:
+ *                 type: integer
+ *                 description: 父评论ID（回复评论时使用）
+ *     responses:
+ *       200:
+ *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   $ref: '#/components/schemas/Comment'
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 创建评论
 router.post('/', authenticateToken, async (req, res) => {
   try {

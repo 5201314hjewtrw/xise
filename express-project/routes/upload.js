@@ -86,6 +86,53 @@ const videoUpload = multer({
   }
 });
 
+/**
+ * @swagger
+ * /upload/single:
+ *   post:
+ *     summary: 单图片上传
+ *     tags: [上传]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: 图片文件
+ *               watermark:
+ *                 type: boolean
+ *                 description: 是否添加水印
+ *     responses:
+ *       200:
+ *         description: 上传成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                       description: 图片URL
+ *       400:
+ *         description: 没有上传文件
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 上传失败
+ */
 // 单图片上传到图床
 router.post('/single', authenticateToken, upload.single('file'), async (req, res) => {
   try {

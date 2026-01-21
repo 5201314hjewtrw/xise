@@ -5,6 +5,41 @@ const { prisma } = require('../config/config');
 const { authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
 
+/**
+ * @swagger
+ * /likes:
+ *   post:
+ *     summary: 点赞
+ *     tags: [点赞]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - target_type
+ *               - target_id
+ *             properties:
+ *               target_type:
+ *                 type: integer
+ *                 enum: [1, 2]
+ *                 description: 目标类型 (1-笔记, 2-评论)
+ *               target_id:
+ *                 type: integer
+ *                 description: 目标ID
+ *     responses:
+ *       200:
+ *         description: 点赞成功
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 点赞/取消点赞
 router.post('/', authenticateToken, async (req, res) => {
   try {
