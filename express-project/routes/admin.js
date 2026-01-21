@@ -62,9 +62,9 @@ router.post('/guest-access-toggle', adminAuth, async (req, res) => {
   res.json({ code: RESPONSE_CODES.SUCCESS, message: `游客访问限制已${newValue ? '开启' : '关闭'}` })
 })
 
-// ===================== 获取所有后台设置 =====================
+// ===================== 系统设置 (System Settings) =====================
 
-// 获取所有设置（用于管理后台显示）
+// 获取所有系统设置（用于管理后台显示）
 router.get('/settings', adminAuth, async (req, res) => {
   try {
     const allSettings = await settingsService.getAllSettings()
@@ -76,6 +76,96 @@ router.get('/settings', adminAuth, async (req, res) => {
   } catch (error) {
     console.error('获取设置失败:', error)
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取设置失败' })
+  }
+})
+
+// 获取系统设置（分类展示）
+router.get('/system-settings', adminAuth, async (req, res) => {
+  try {
+    const settings = {
+      // 访问控制设置
+      access_control: {
+        label: '访问控制',
+        settings: {
+          guest_access_restricted: {
+            label: '禁止游客访问',
+            description: '启用后，未登录用户无法访问笔记、评论、搜索、标签等内容',
+            value: settingsService.isGuestAccessRestricted(),
+            type: 'boolean'
+          }
+        }
+      },
+      // AI审核设置
+      ai_review: {
+        label: 'AI审核',
+        settings: {
+          ai_username_review_enabled: {
+            label: '用户名AI审核',
+            description: '启用后，用户昵称将通过AI进行内容审核',
+            value: settingsService.isAiUsernameReviewEnabled(),
+            type: 'boolean'
+          },
+          ai_content_review_enabled: {
+            label: '内容AI审核',
+            description: '启用后，评论等内容将通过AI进行审核',
+            value: settingsService.isAiContentReviewEnabled(),
+            type: 'boolean'
+          }
+        }
+      }
+    }
+    
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      data: settings, 
+      message: 'success' 
+    })
+  } catch (error) {
+    console.error('获取系统设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取系统设置失败' })
+  }
+})
+
+// 更新系统设置（批量更新）
+router.put('/system-settings', adminAuth, async (req, res) => {
+  try {
+    const { settings } = req.body
+    const messages = []
+    
+    if (settings) {
+      // 处理访问控制设置
+      if (settings.guest_access_restricted !== undefined) {
+        await settingsService.setGuestAccessRestricted(Boolean(settings.guest_access_restricted))
+        messages.push(`游客访问限制已${settings.guest_access_restricted ? '开启' : '关闭'}`)
+      }
+      
+      // 处理AI审核设置
+      if (settings.ai_username_review_enabled !== undefined) {
+        await settingsService.setAiUsernameReviewEnabled(Boolean(settings.ai_username_review_enabled))
+        messages.push(`用户名AI审核已${settings.ai_username_review_enabled ? '开启' : '关闭'}`)
+      }
+      
+      if (settings.ai_content_review_enabled !== undefined) {
+        await settingsService.setAiContentReviewEnabled(Boolean(settings.ai_content_review_enabled))
+        messages.push(`内容AI审核已${settings.ai_content_review_enabled ? '开启' : '关闭'}`)
+      }
+    }
+    
+    // 返回更新后的设置
+    const updatedSettings = {
+      guest_access_restricted: settingsService.isGuestAccessRestricted(),
+      ai_username_review_enabled: settingsService.isAiUsernameReviewEnabled(),
+      ai_content_review_enabled: settingsService.isAiContentReviewEnabled()
+    }
+    
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      message: messages.length > 0 ? messages.join('，') : '设置已更新',
+      data: updatedSettings
+    })
+  } catch (error) {
+    console.error('更新系统设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新系统设置失败' })
   }
 })
 
