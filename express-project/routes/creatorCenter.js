@@ -912,16 +912,39 @@ router.get('/quality-rewards', authenticateToken, async (req, res) => {
       };
     }));
     
-    // 按质量等级统计
-    const qualityStats = await prisma.$queryRaw`
-      SELECT 
-        SUBSTRING(reason FROM '笔记质量奖励: (.+)') as quality_label,
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total_amount
-      FROM creator_earnings_log
-      WHERE user_id = ${userIdBigInt} AND type = 'quality_reward'
-      GROUP BY SUBSTRING(reason FROM '笔记质量奖励: (.+)')
-    `.catch(() => []);
+    // 按质量等级统计 - 使用Prisma的groupBy替代原始SQL
+    let qualityStats = [];
+    try {
+      // 获取所有质量奖励记录并在应用层统计
+      const allQualityLogs = await prisma.creatorEarningsLog.findMany({
+        where: {
+          user_id: userIdBigInt,
+          type: 'quality_reward'
+        },
+        select: { reason: true, amount: true }
+      });
+      
+      // 在应用层按质量等级分组统计
+      const statsMap = {};
+      for (const log of allQualityLogs) {
+        // 从reason中提取质量等级标签
+        const match = log.reason?.match(/笔记质量奖励: (.+)/);
+        const qualityLabel = match ? match[1] : '其他';
+        if (!statsMap[qualityLabel]) {
+          statsMap[qualityLabel] = { count: 0, total_amount: 0 };
+        }
+        statsMap[qualityLabel].count += 1;
+        statsMap[qualityLabel].total_amount += parseFloat(log.amount) || 0;
+      }
+      
+      qualityStats = Object.entries(statsMap).map(([label, data]) => ({
+        quality_label: label,
+        count: data.count,
+        total_amount: data.total_amount
+      }));
+    } catch (e) {
+      console.error('统计质量奖励失败:', e);
+    }
     
     res.json({
       code: RESPONSE_CODES.SUCCESS,
