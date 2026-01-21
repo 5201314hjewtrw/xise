@@ -290,6 +290,47 @@ const claimExtendedEarnings = async (userId) => {
   };
 };
 
+/**
+ * @swagger
+ * /creator-center/config:
+ *   get:
+ *     summary: 获取创作者中心配置
+ *     tags: [创作中心]
+ *     responses:
+ *       200:
+ *         description: 成功返回创作者中心配置
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     platformFeeRate:
+ *                       type: number
+ *                       description: 平台抽成比例
+ *                     creatorShareRate:
+ *                       type: number
+ *                       description: 创作者分成比例
+ *                     withdrawEnabled:
+ *                       type: boolean
+ *                       description: 是否允许提现
+ *                     minWithdrawAmount:
+ *                       type: number
+ *                       description: 最低提现金额
+ *                     extendedEarnings:
+ *                       type: object
+ *                       properties:
+ *                         enabled:
+ *                           type: boolean
+ *                         rates:
+ *                           type: object
+ *                         dailyCap:
+ *                           type: number
+ */
 // 获取创作者中心配置
 router.get('/config', (req, res) => {
   const platformFeeRate = getPlatformFeeRate();
@@ -324,6 +365,47 @@ router.get('/config', (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /creator-center/overview:
+ *   get:
+ *     summary: 获取创作者收益概览
+ *     tags: [创作中心]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回收益概览
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     totalEarnings:
+ *                       type: number
+ *                       description: 累计收益
+ *                     availableBalance:
+ *                       type: number
+ *                       description: 可提现余额
+ *                     withdrawnAmount:
+ *                       type: number
+ *                       description: 已提现金额
+ *                     todayEarnings:
+ *                       type: number
+ *                       description: 今日收益
+ *                     monthEarnings:
+ *                       type: number
+ *                       description: 本月收益
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取创作者收益概览
 router.get('/overview', authenticateToken, async (req, res) => {
   try {

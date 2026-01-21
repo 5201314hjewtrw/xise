@@ -151,6 +151,50 @@ router.get('/search', optionalAuth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /users/verification:
+ *   post:
+ *     summary: 提交认证申请
+ *     tags: [用户]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - type
+ *               - content
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 description: 认证类型
+ *               content:
+ *                 type: string
+ *                 maxLength: 1000
+ *                 description: 认证内容
+ *     responses:
+ *       200:
+ *         description: 认证申请提交成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 提交认证申请
 router.post('/verification', authenticateToken, async (req, res) => {
   try {
@@ -209,6 +253,46 @@ router.post('/verification', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /users/verification/status:
+ *   get:
+ *     summary: 获取用户认证状态
+ *     tags: [用户]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回认证状态
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       type:
+ *                         type: string
+ *                       status:
+ *                         type: integer
+ *                       created_at:
+ *                         type: string
+ *                         format: date-time
+ *                       audit_time:
+ *                         type: string
+ *                         format: date-time
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取用户认证状态
 router.get('/verification/status', authenticateToken, async (req, res) => {
   try {
@@ -242,6 +326,33 @@ router.get('/verification/status', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /users/verification/revoke:
+ *   delete:
+ *     summary: 撤回认证申请
+ *     tags: [用户]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 撤回成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 没有找到可撤回的认证申请
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 撤回认证申请
 router.delete('/verification/revoke', authenticateToken, async (req, res) => {
   try {
@@ -906,6 +1017,42 @@ router.put('/:id/password', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /users/{id}:
+ *   delete:
+ *     summary: 删除账号
+ *     tags: [用户]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 用户汐社号
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 只能删除自己的账号
+ *       404:
+ *         description: 用户不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 删除账号
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
@@ -951,6 +1098,48 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /users/{id}/follow:
+ *   post:
+ *     summary: 关注用户
+ *     tags: [用户]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 要关注的用户汐社号
+ *     responses:
+ *       200:
+ *         description: 关注成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     isMutual:
+ *                       type: boolean
+ *                       description: 是否互相关注
+ *       400:
+ *         description: 不能关注自己或已关注
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 用户不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 关注用户
 router.post('/:id/follow', authenticateToken, async (req, res) => {
   try {
@@ -1008,6 +1197,40 @@ router.post('/:id/follow', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /users/{id}/follow:
+ *   delete:
+ *     summary: 取消关注用户
+ *     tags: [用户]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 要取消关注的用户汐社号
+ *     responses:
+ *       200:
+ *         description: 取消关注成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 用户或关注记录不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 取消关注用户
 router.delete('/:id/follow', authenticateToken, async (req, res) => {
   try {

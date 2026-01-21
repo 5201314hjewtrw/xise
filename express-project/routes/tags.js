@@ -5,6 +5,36 @@ const { prisma } = require('../config/config');
 const { getOrSet, CACHE_TTL } = require('../utils/cache');
 const { optionalAuthWithGuestRestriction } = require('../middleware/auth');
 
+/**
+ * @swagger
+ * /tags:
+ *   get:
+ *     summary: 获取所有标签
+ *     tags: [标签]
+ *     responses:
+ *       200:
+ *         description: 成功返回标签列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                       use_count:
+ *                         type: integer
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取所有标签
 router.get('/', optionalAuthWithGuestRestriction, async (req, res) => {
   try {
@@ -25,6 +55,43 @@ router.get('/', optionalAuthWithGuestRestriction, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /tags/hot:
+ *   get:
+ *     summary: 获取热门标签
+ *     tags: [标签]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: 返回数量
+ *     responses:
+ *       200:
+ *         description: 成功返回热门标签列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                       use_count:
+ *                         type: integer
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取热门标签
 router.get('/hot', optionalAuthWithGuestRestriction, async (req, res) => {
   try {

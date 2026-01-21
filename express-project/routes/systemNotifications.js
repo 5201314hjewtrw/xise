@@ -4,6 +4,44 @@ const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
 const prisma = require('../utils/prisma');
 const { authenticateToken } = require('../middleware/auth');
 
+/**
+ * @swagger
+ * /system-notifications/pending:
+ *   get:
+ *     summary: 获取当前用户未确认的活跃系统通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回未确认的系统通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       title:
+ *                         type: string
+ *                       content:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                       priority:
+ *                         type: integer
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取当前用户未确认的活跃系统通知
 router.get('/pending', authenticateToken, async (req, res) => {
   try {

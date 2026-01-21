@@ -62,6 +62,35 @@ const updateUserPoints = async (userId, amount, type, reason) => {
   return newPoints;
 };
 
+/**
+ * @swagger
+ * /balance/config:
+ *   get:
+ *     summary: 获取余额中心配置
+ *     tags: [余额]
+ *     responses:
+ *       200:
+ *         description: 成功返回配置信息
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     enabled:
+ *                       type: boolean
+ *                       description: 余额中心是否启用
+ *                     exchangeRateIn:
+ *                       type: number
+ *                       description: 兑入汇率
+ *                     exchangeRateOut:
+ *                       type: number
+ *                       description: 兑出汇率
+ */
 // 获取余额中心配置（前端需要）
 router.get('/config', (req, res) => {
   res.json({
@@ -75,6 +104,35 @@ router.get('/config', (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /balance/local-points:
+ *   get:
+ *     summary: 获取用户石榴点余额
+ *     tags: [余额]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回用户石榴点余额
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     points:
+ *                       type: number
+ *                       description: 石榴点余额
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取用户石榴点余额
 router.get('/local-points', authenticateToken, async (req, res) => {
   try {

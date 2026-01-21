@@ -4,6 +4,39 @@ const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
 const { prisma } = require('../config/config');
 const { authenticateToken } = require('../middleware/auth');
 
+/**
+ * @swagger
+ * /notifications/comments:
+ *   get:
+ *     summary: 获取评论通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *     responses:
+ *       200:
+ *         description: 成功返回评论通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取评论通知
 router.get('/comments', authenticateToken, async (req, res) => {
   try {
@@ -154,6 +187,39 @@ router.get('/comments', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/likes:
+ *   get:
+ *     summary: 获取点赞通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *     responses:
+ *       200:
+ *         description: 成功返回点赞通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取点赞通知
 router.get('/likes', authenticateToken, async (req, res) => {
   try {
@@ -261,6 +327,39 @@ router.get('/likes', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/follows:
+ *   get:
+ *     summary: 获取关注通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *     responses:
+ *       200:
+ *         description: 成功返回关注通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取关注通知
 router.get('/follows', authenticateToken, async (req, res) => {
   try {
@@ -334,6 +433,39 @@ router.get('/follows', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications/collections:
+ *   get:
+ *     summary: 获取收藏通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *     responses:
+ *       200:
+ *         description: 成功返回收藏通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取收藏通知
 router.get('/collections', authenticateToken, async (req, res) => {
   try {
@@ -438,6 +570,44 @@ router.get('/collections', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /notifications:
+ *   get:
+ *     summary: 获取通知列表（通用接口）
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: integer
+ *         description: 通知类型
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *     responses:
+ *       200:
+ *         description: 成功返回通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取通知列表（通用接口）
 router.get('/', authenticateToken, async (req, res) => {
   try {

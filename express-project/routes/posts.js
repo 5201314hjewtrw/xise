@@ -266,6 +266,51 @@ router.get('/recommended', optionalAuthWithGuestRestriction, async (req, res) =>
   }
 });
 
+/**
+ * @swagger
+ * /posts/hot:
+ *   get:
+ *     summary: 获取热门笔记列表
+ *     tags: [帖子]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: 分类
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: integer
+ *         description: 类型 (1-图文, 2-视频)
+ *       - in: query
+ *         name: timeRange
+ *         schema:
+ *           type: integer
+ *           default: 7
+ *         description: 时间范围（天）
+ *     responses:
+ *       200:
+ *         description: 成功返回热门笔记列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取热门笔记列表
 router.get('/hot', optionalAuthWithGuestRestriction, async (req, res) => {
   try {
@@ -1092,6 +1137,81 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /posts/{id}:
+ *   put:
+ *     summary: 更新笔记
+ *     tags: [帖子]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 笔记ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 description: 标题
+ *               content:
+ *                 type: string
+ *                 description: 内容
+ *               category_id:
+ *                 type: integer
+ *                 description: 分类ID
+ *               type:
+ *                 type: integer
+ *                 description: 类型 (1-图文, 2-视频)
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: 图片URL数组
+ *               video:
+ *                 type: object
+ *                 description: 视频信息
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: 标签数组
+ *               is_draft:
+ *                 type: boolean
+ *                 description: 是否草稿
+ *               visibility:
+ *                 type: string
+ *                 enum: [public, private, friends_only]
+ *                 description: 可见性
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   $ref: '#/components/schemas/Post'
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 只能编辑自己的笔记
+ *       404:
+ *         description: 笔记不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 更新笔记
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
@@ -1231,6 +1351,42 @@ router.put('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /posts/{id}:
+ *   delete:
+ *     summary: 删除笔记
+ *     tags: [帖子]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 笔记ID
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 只能删除自己的笔记
+ *       404:
+ *         description: 笔记不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 删除笔记
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
