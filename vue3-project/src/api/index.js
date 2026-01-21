@@ -987,6 +987,11 @@ export const creatorCenterApi = {
   // 领取今日激励奖励
   claimIncentive() {
     return request.post('/creator-center/claim-incentive')
+  },
+
+  // 获取质量奖励收益详情
+  getQualityRewards(params = {}) {
+    return request.get('/creator-center/quality-rewards', { params })
   }
 }
 

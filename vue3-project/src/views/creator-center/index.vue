@@ -54,6 +54,12 @@ const paidContent = ref([])
 const paidContentPagination = ref({ page: 1, limit: 15, total: 0, totalPages: 0 })
 const contentLoading = ref(false)
 
+// 质量奖励
+const qualityRewards = ref([])
+const qualityRewardsPagination = ref({ page: 1, limit: 15, total: 0, totalPages: 0 })
+const qualityRewardsLoading = ref(false)
+const qualityRewardsTotalEarnings = ref(0)
+
 // 提现相关
 const showWithdrawModal = ref(false)
 const withdrawAmount = ref('')
@@ -86,7 +92,8 @@ const getEarningsTypeLabel = (type) => {
     subscription: '订阅收入',
     tip: '打赏收入',
     withdraw: '提现',
-    extended_daily: '激励奖励'
+    extended_daily: '激励奖励',
+    quality_reward: '质量奖励'
   }
   return typeMap[type] || type
 }
@@ -248,11 +255,35 @@ const loadPaidContent = async (page = 1) => {
   }
 }
 
+// 加载质量奖励
+const loadQualityRewards = async (page = 1) => {
+  try {
+    qualityRewardsLoading.value = true
+    const response = await creatorCenterApi.getQualityRewards({ page, limit: qualityRewardsPagination.value.limit })
+    if (response.success) {
+      qualityRewards.value = response.data.list
+      qualityRewardsPagination.value = response.data.pagination
+      qualityRewardsTotalEarnings.value = response.data.total_earnings || 0
+    }
+  } catch (error) {
+    console.error('获取质量奖励失败:', error)
+  } finally {
+    qualityRewardsLoading.value = false
+  }
+}
+
+// 获取质量等级标签
+const getQualityLabel = (level) => {
+  const labels = { none: '未标记', low: '低质量', medium: '中质量', high: '高质量' }
+  return labels[level] || level
+}
+
 // 切换标签
 const switchTab = (tab) => {
   activeTab.value = tab
   if (tab === 'earnings' && earningsLog.value.length === 0) loadEarningsLog()
   else if (tab === 'content' && paidContent.value.length === 0) loadPaidContent()
+  else if (tab === 'quality' && qualityRewards.value.length === 0) loadQualityRewards()
 }
 
 // 提现相关
@@ -380,6 +411,9 @@ onUnmounted(() => {
         <button class="tab" :class="{ active: activeTab === 'content' }" @click="switchTab('content')">
           付费内容
         </button>
+        <button class="tab" :class="{ active: activeTab === 'quality' }" @click="switchTab('quality')">
+          质量奖励
+        </button>
       </div>
 
       <!-- 收益明细 -->
@@ -457,6 +491,56 @@ onUnmounted(() => {
           </button>
           <span>{{ paidContentPagination.page }} / {{ paidContentPagination.totalPages }}</span>
           <button :disabled="paidContentPagination.page >= paidContentPagination.totalPages" @click="loadPaidContent(paidContentPagination.page + 1)">
+            <Icon icon="mdi:chevron-right" />
+          </button>
+        </div>
+      </div>
+
+      <!-- 质量奖励 -->
+      <div class="tab-content" v-show="activeTab === 'quality'">
+        <div class="quality-summary" v-if="qualityRewardsTotalEarnings > 0">
+          <Icon icon="mdi:star-circle" />
+          <span>累计质量奖励: <strong>¥{{ formatMoney(qualityRewardsTotalEarnings) }}</strong></span>
+        </div>
+        
+        <div class="content-list" v-if="!qualityRewardsLoading && qualityRewards.length > 0">
+          <div class="content-item" v-for="item in qualityRewards" :key="item.id" @click="item.post && goToPost(item.post.id)">
+            <div class="content-cover">
+              <img v-if="item.post?.cover" :src="item.post.cover" alt="" />
+              <div v-else class="cover-placeholder"><Icon icon="mdi:image" /></div>
+              <div class="quality-badge" :class="item.post?.quality_level || 'none'">
+                {{ getQualityLabel(item.post?.quality_level) }}
+              </div>
+            </div>
+            <div class="content-info">
+              <h4 class="content-title">{{ item.post?.title || '无标题' }}</h4>
+              <div class="content-stats">
+                <span>{{ item.reason }}</span>
+              </div>
+              <div class="content-revenue">
+                奖励 <strong>+¥{{ formatMoney(item.amount) }}</strong>
+              </div>
+              <div class="content-time">{{ formatDate(item.created_at) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty" v-else-if="!qualityRewardsLoading">
+          <Icon icon="mdi:star-outline" />
+          <p>暂无质量奖励记录</p>
+          <p class="hint">当管理员标记您的笔记为优质内容时，您将获得相应奖励</p>
+        </div>
+
+        <div class="loading-spinner" v-else>
+          <Icon icon="mdi:loading" class="spin" />
+        </div>
+
+        <div class="pagination" v-if="qualityRewardsPagination.totalPages > 1">
+          <button :disabled="qualityRewardsPagination.page <= 1" @click="loadQualityRewards(qualityRewardsPagination.page - 1)">
+            <Icon icon="mdi:chevron-left" />
+          </button>
+          <span>{{ qualityRewardsPagination.page }} / {{ qualityRewardsPagination.totalPages }}</span>
+          <button :disabled="qualityRewardsPagination.page >= qualityRewardsPagination.totalPages" @click="loadQualityRewards(qualityRewardsPagination.page + 1)">
             <Icon icon="mdi:chevron-right" />
           </button>
         </div>
@@ -1052,5 +1136,53 @@ onUnmounted(() => {
 .modal-footer .confirm:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* 质量奖励样式 */
+.quality-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fcd34d 100%);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  color: #92400e;
+}
+
+.quality-summary svg {
+  font-size: 20px;
+}
+
+.quality-summary strong {
+  color: #b45309;
+  font-size: 16px;
+}
+
+.quality-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.quality-badge.none { background: rgba(0,0,0,0.5); color: white; }
+.quality-badge.low { background: #fef3c7; color: #b45309; }
+.quality-badge.medium { background: #dbeafe; color: #1d4ed8; }
+.quality-badge.high { background: #d1fae5; color: #047857; }
+
+.content-time {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 2px;
+}
+
+.empty .hint {
+  font-size: 12px;
+  color: #aaa;
+  margin-top: 4px;
 }
 </style>

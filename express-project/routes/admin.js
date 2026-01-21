@@ -4011,6 +4011,443 @@ router.put('/user-toolbar/:id/toggle-active', adminAuth, async (req, res) => {
   }
 })
 
+// ===================== 笔记质量管理 =====================
+
+// 检查质量奖励设置功能是否可用
+let isQualityRewardAvailable = null
+const checkQualityRewardAvailable = async () => {
+  if (isQualityRewardAvailable !== null) return isQualityRewardAvailable
+  try {
+    await prisma.postQualityRewardSetting.findFirst()
+    isQualityRewardAvailable = true
+  } catch (error) {
+    isQualityRewardAvailable = false
+  }
+  return isQualityRewardAvailable
+}
+
+// 获取质量奖励设置列表
+router.get('/quality-reward-settings', adminAuth, async (req, res) => {
+  try {
+    const available = await checkQualityRewardAvailable()
+    if (!available) {
+      // 返回默认设置
+      return res.json({
+        code: RESPONSE_CODES.SUCCESS,
+        data: {
+          data: [
+            { id: 1, quality_level: 'low', reward_amount: 1.00, description: '低质量奖励', is_active: true },
+            { id: 2, quality_level: 'medium', reward_amount: 3.00, description: '中质量奖励', is_active: true },
+            { id: 3, quality_level: 'high', reward_amount: 5.00, description: '高质量奖励', is_active: true }
+          ]
+        },
+        message: 'success'
+      })
+    }
+
+    let settings = await prisma.postQualityRewardSetting.findMany({
+      orderBy: { id: 'asc' }
+    })
+
+    // 如果没有设置，创建默认设置
+    if (settings.length === 0) {
+      const defaultSettings = [
+        { quality_level: 'low', reward_amount: 1.00, description: '低质量奖励', is_active: true },
+        { quality_level: 'medium', reward_amount: 3.00, description: '中质量奖励', is_active: true },
+        { quality_level: 'high', reward_amount: 5.00, description: '高质量奖励', is_active: true }
+      ]
+      for (const setting of defaultSettings) {
+        await prisma.postQualityRewardSetting.create({ data: setting })
+      }
+      settings = await prisma.postQualityRewardSetting.findMany({ orderBy: { id: 'asc' } })
+    }
+
+    const formattedSettings = settings.map(s => ({
+      id: s.id,
+      quality_level: s.quality_level,
+      reward_amount: parseFloat(s.reward_amount),
+      description: s.description,
+      is_active: s.is_active,
+      created_at: s.created_at,
+      updated_at: s.updated_at
+    }))
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { data: formattedSettings }, message: 'success' })
+  } catch (error) {
+    console.error('获取质量奖励设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+// 更新质量奖励设置
+router.put('/quality-reward-settings/:id', adminAuth, async (req, res) => {
+  try {
+    const available = await checkQualityRewardAvailable()
+    if (!available) {
+      return res.status(HTTP_STATUS.SERVICE_UNAVAILABLE || 503).json({ 
+        code: RESPONSE_CODES.ERROR, 
+        message: '质量奖励功能暂不可用，请先运行数据库迁移' 
+      })
+    }
+
+    const settingId = parseInt(req.params.id)
+    const { reward_amount, description, is_active } = req.body
+
+    const existing = await prisma.postQualityRewardSetting.findUnique({ where: { id: settingId } })
+    if (!existing) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '设置不存在' })
+    }
+
+    const updateData = {}
+    if (reward_amount !== undefined) updateData.reward_amount = parseFloat(reward_amount) || 0
+    if (description !== undefined) updateData.description = description
+    if (is_active !== undefined) updateData.is_active = is_active === true || is_active === 'true'
+
+    await prisma.postQualityRewardSetting.update({ where: { id: settingId }, data: updateData })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新质量奖励设置失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+// 获取笔记质量等级（带筛选）
+router.get('/posts-quality', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { title, user_display_id, type, quality_level, is_draft, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (title) where.title = { contains: title }
+    if (type !== undefined && type !== '') where.type = parseInt(type)
+    if (quality_level !== undefined && quality_level !== '') where.quality_level = quality_level
+    if (is_draft !== undefined && is_draft !== '') where.is_draft = parseInt(is_draft) === 1
+    if (user_display_id) where.user = { user_id: { contains: user_display_id } }
+
+    const [total, posts] = await Promise.all([
+      prisma.post.count({ where }),
+      prisma.post.findMany({
+        where,
+        include: {
+          user: { select: { id: true, user_id: true, nickname: true } },
+          category: { select: { name: true } },
+          images: { select: { image_url: true }, take: 1 },
+          videos: { select: { cover_url: true }, take: 1 }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedPosts = posts.map(post => ({
+      id: Number(post.id),
+      user_id: Number(post.user_id),
+      title: post.title,
+      content: post.content ? post.content.substring(0, 100) : '',
+      type: post.type,
+      view_count: Number(post.view_count),
+      like_count: post.like_count,
+      collect_count: post.collect_count,
+      comment_count: post.comment_count,
+      created_at: post.created_at,
+      is_draft: post.is_draft,
+      user_display_id: post.user?.user_id,
+      nickname: post.user?.nickname,
+      quality_level: post.quality_level || 'none',
+      quality_marked_at: post.quality_marked_at,
+      quality_reward: post.quality_reward ? parseFloat(post.quality_reward) : null,
+      cover: post.type === 2 
+        ? (post.videos[0]?.cover_url || null)
+        : (post.images[0]?.image_url || null)
+    }))
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: formattedPosts, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取笔记质量列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+// 设置笔记质量等级并发放奖励
+router.put('/posts/:id/quality', adminAuth, async (req, res) => {
+  try {
+    const postId = BigInt(req.params.id)
+    const { quality_level } = req.body
+
+    if (!quality_level || !['none', 'low', 'medium', 'high'].includes(quality_level)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: '无效的质量等级'
+      })
+    }
+
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      include: { user: true }
+    })
+
+    if (!post) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '笔记不存在' })
+    }
+
+    // 如果设置为none，清除质量标记
+    if (quality_level === 'none') {
+      await prisma.post.update({
+        where: { id: postId },
+        data: {
+          quality_level: 'none',
+          quality_marked_at: null,
+          quality_reward: null
+        }
+      })
+      return res.json({ code: RESPONSE_CODES.SUCCESS, message: '已清除质量标记' })
+    }
+
+    // 检查是否已经标记过质量（仅允许标记一次）
+    if (post.quality_level && post.quality_level !== 'none') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: '该笔记已标记过质量等级，每篇笔记仅可标记一次'
+      })
+    }
+
+    // 获取奖励金额
+    let rewardAmount = 0
+    try {
+      const available = await checkQualityRewardAvailable()
+      if (available) {
+        const rewardSetting = await prisma.postQualityRewardSetting.findUnique({
+          where: { quality_level: quality_level }
+        })
+        if (rewardSetting && rewardSetting.is_active) {
+          rewardAmount = parseFloat(rewardSetting.reward_amount) || 0
+        }
+      } else {
+        // 使用默认奖励
+        const defaultRewards = { low: 1.00, medium: 3.00, high: 5.00 }
+        rewardAmount = defaultRewards[quality_level] || 0
+      }
+    } catch (e) {
+      console.log('获取奖励设置失败，使用默认值')
+      const defaultRewards = { low: 1.00, medium: 3.00, high: 5.00 }
+      rewardAmount = defaultRewards[quality_level] || 0
+    }
+
+    // 更新笔记质量等级
+    await prisma.post.update({
+      where: { id: postId },
+      data: {
+        quality_level: quality_level,
+        quality_marked_at: new Date(),
+        quality_reward: rewardAmount
+      }
+    })
+
+    // 如果有奖励金额，添加到创作者收益
+    if (rewardAmount > 0) {
+      const userId = post.user_id
+      
+      // 获取或创建创作者收益账户
+      let earnings = await prisma.creatorEarnings.findUnique({
+        where: { user_id: userId }
+      })
+      
+      if (!earnings) {
+        earnings = await prisma.creatorEarnings.create({
+          data: {
+            user_id: userId,
+            balance: 0.00,
+            total_earnings: 0.00,
+            withdrawn_amount: 0.00
+          }
+        })
+      }
+
+      const newBalance = parseFloat(earnings.balance) + rewardAmount
+      const newTotalEarnings = parseFloat(earnings.total_earnings) + rewardAmount
+
+      // 更新收益余额
+      await prisma.creatorEarnings.update({
+        where: { user_id: userId },
+        data: { 
+          balance: newBalance,
+          total_earnings: newTotalEarnings
+        }
+      })
+
+      // 记录收益日志
+      const qualityLabels = { low: '低质量', medium: '中质量', high: '高质量' }
+      await prisma.creatorEarningsLog.create({
+        data: {
+          user_id: userId,
+          earnings_id: earnings.id,
+          amount: rewardAmount,
+          balance_after: newBalance,
+          type: 'quality_reward',
+          source_id: postId,
+          source_type: 'post',
+          reason: `笔记质量奖励: ${qualityLabels[quality_level]}`,
+          platform_fee: 0
+        }
+      })
+
+      console.log(`笔记 ${postId} 质量标记为 ${quality_level}，发放奖励 ${rewardAmount} 给用户 ${userId}`)
+    }
+
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      message: `质量等级已设置为${quality_level}${rewardAmount > 0 ? '，已发放' + rewardAmount + '石榴点奖励' : ''}`,
+      data: { quality_level, reward_amount: rewardAmount }
+    })
+  } catch (error) {
+    console.error('设置笔记质量失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '设置失败' })
+  }
+})
+
+// 批量设置笔记质量等级
+router.put('/posts-quality/batch', adminAuth, async (req, res) => {
+  try {
+    const { ids, quality_level } = req.body
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: '请提供要设置的笔记ID列表'
+      })
+    }
+
+    if (!quality_level || !['none', 'low', 'medium', 'high'].includes(quality_level)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        code: RESPONSE_CODES.VALIDATION_ERROR,
+        message: '无效的质量等级'
+      })
+    }
+
+    // 获取奖励金额
+    let rewardAmount = 0
+    if (quality_level !== 'none') {
+      try {
+        const available = await checkQualityRewardAvailable()
+        if (available) {
+          const rewardSetting = await prisma.postQualityRewardSetting.findUnique({
+            where: { quality_level: quality_level }
+          })
+          if (rewardSetting && rewardSetting.is_active) {
+            rewardAmount = parseFloat(rewardSetting.reward_amount) || 0
+          }
+        } else {
+          const defaultRewards = { low: 1.00, medium: 3.00, high: 5.00 }
+          rewardAmount = defaultRewards[quality_level] || 0
+        }
+      } catch (e) {
+        const defaultRewards = { low: 1.00, medium: 3.00, high: 5.00 }
+        rewardAmount = defaultRewards[quality_level] || 0
+      }
+    }
+
+    let successCount = 0
+    let totalReward = 0
+    let skippedCount = 0
+
+    for (const id of ids) {
+      try {
+        const postId = BigInt(id)
+        const post = await prisma.post.findUnique({
+          where: { id: postId },
+          include: { user: true }
+        })
+
+        if (!post) continue
+
+        // 如果不是清除操作，检查是否已经标记过（仅允许标记一次）
+        if (quality_level !== 'none' && post.quality_level && post.quality_level !== 'none') {
+          skippedCount++
+          continue
+        }
+
+        // 更新笔记质量
+        await prisma.post.update({
+          where: { id: postId },
+          data: {
+            quality_level: quality_level,
+            quality_marked_at: quality_level === 'none' ? null : new Date(),
+            quality_reward: quality_level === 'none' ? null : rewardAmount
+          }
+        })
+
+        // 发放奖励
+        if (quality_level !== 'none' && rewardAmount > 0) {
+          const userId = post.user_id
+          
+          let earnings = await prisma.creatorEarnings.findUnique({
+            where: { user_id: userId }
+          })
+          
+          if (!earnings) {
+            earnings = await prisma.creatorEarnings.create({
+              data: {
+                user_id: userId,
+                balance: 0.00,
+                total_earnings: 0.00,
+                withdrawn_amount: 0.00
+              }
+            })
+          }
+
+          const newBalance = parseFloat(earnings.balance) + rewardAmount
+          const newTotalEarnings = parseFloat(earnings.total_earnings) + rewardAmount
+
+          await prisma.creatorEarnings.update({
+            where: { user_id: userId },
+            data: { 
+              balance: newBalance,
+              total_earnings: newTotalEarnings
+            }
+          })
+
+          const qualityLabels = { low: '低质量', medium: '中质量', high: '高质量' }
+          await prisma.creatorEarningsLog.create({
+            data: {
+              user_id: userId,
+              earnings_id: earnings.id,
+              amount: rewardAmount,
+              balance_after: newBalance,
+              type: 'quality_reward',
+              source_id: postId,
+              source_type: 'post',
+              reason: `笔记质量奖励: ${qualityLabels[quality_level]}`,
+              platform_fee: 0
+            }
+          })
+
+          totalReward += rewardAmount
+        }
+
+        successCount++
+      } catch (e) {
+        console.error(`处理笔记 ${id} 失败:`, e)
+      }
+    }
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      message: `成功设置 ${successCount} 篇笔记${skippedCount > 0 ? '，跳过 ' + skippedCount + ' 篇已标记笔记' : ''}${totalReward > 0 ? '，共发放 ' + totalReward.toFixed(2) + ' 石榴点奖励' : ''}`,
+      data: { success_count: successCount, skipped_count: skippedCount, total_reward: totalReward }
+    })
+  } catch (error) {
+    console.error('批量设置笔记质量失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '操作失败' })
+  }
+})
+
 module.exports = router
 module.exports.isAiAutoReviewEnabled = isAiAutoReviewEnabled
 module.exports.isAiUsernameReviewEnabled = isAiUsernameReviewEnabled
