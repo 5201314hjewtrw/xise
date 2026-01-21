@@ -666,6 +666,34 @@ const selectQuality = (quality) => {
 // 检测是否处于原生视频全屏状态（用于 iOS WebView）
 let isInNativeVideoFullscreen = false
 
+// 安全地调用原生视频全屏方法
+const safeWebkitEnterFullscreen = () => {
+  try {
+    if (videoElement.value?.webkitEnterFullscreen) {
+      isInNativeVideoFullscreen = true
+      videoElement.value.webkitEnterFullscreen()
+      return true
+    }
+  } catch (err) {
+    console.warn('原生视频全屏进入失败:', err)
+    isInNativeVideoFullscreen = false
+  }
+  return false
+}
+
+const safeWebkitExitFullscreen = () => {
+  try {
+    if (videoElement.value?.webkitExitFullscreen) {
+      videoElement.value.webkitExitFullscreen()
+      isInNativeVideoFullscreen = false
+      return true
+    }
+  } catch (err) {
+    console.warn('原生视频全屏退出失败:', err)
+  }
+  return false
+}
+
 // 切换全屏
 const toggleFullscreen = async () => {
   try {
@@ -685,17 +713,13 @@ const toggleFullscreen = async () => {
       // 这解决了 Android/iOS WebView 中全屏功能失效的问题
       if (isWebView() && videoElement.value?.webkitEnterFullscreen) {
         console.log('🎬 [ShakaVideoPlayer] WebView 环境，使用原生视频全屏')
-        isInNativeVideoFullscreen = true
-        videoElement.value.webkitEnterFullscreen()
-        return
+        if (safeWebkitEnterFullscreen()) return
       }
       
       // iOS 设备（非 Safari 浏览器）也优先使用原生视频全屏
       if (isIOSDevice() && videoElement.value?.webkitEnterFullscreen && !supportsFullscreenAPI()) {
         console.log('🎬 [ShakaVideoPlayer] iOS 设备，使用原生视频全屏')
-        isInNativeVideoFullscreen = true
-        videoElement.value.webkitEnterFullscreen()
-        return
+        if (safeWebkitEnterFullscreen()) return
       }
       
       // 标准全屏 API
@@ -713,18 +737,15 @@ const toggleFullscreen = async () => {
       } else if (videoElement.value?.webkitEnterFullscreen) {
         // 容器不支持时的回退方案 - 使用原生视频全屏
         console.log('🎬 [ShakaVideoPlayer] 容器全屏不支持，使用原生视频全屏')
-        isInNativeVideoFullscreen = true
-        videoElement.value.webkitEnterFullscreen()
+        safeWebkitEnterFullscreen()
       } else {
         console.warn('浏览器不支持全屏功能')
       }
     } else {
       // 退出全屏
-      if (isInNativeVideoFullscreen && videoElement.value?.webkitExitFullscreen) {
+      if (isInNativeVideoFullscreen) {
         // 原生视频全屏退出
-        videoElement.value.webkitExitFullscreen()
-        isInNativeVideoFullscreen = false
-        return
+        if (safeWebkitExitFullscreen()) return
       }
       
       // 标准全屏 API 退出
@@ -737,8 +758,7 @@ const toggleFullscreen = async () => {
       } else if (document.msExitFullscreen) {
         await document.msExitFullscreen()
       } else if (videoElement.value?.webkitExitFullscreen) {
-        videoElement.value.webkitExitFullscreen()
-        isInNativeVideoFullscreen = false
+        safeWebkitExitFullscreen()
       }
     }
   } catch (err) {

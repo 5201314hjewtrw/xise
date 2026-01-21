@@ -10,14 +10,22 @@
 export const isAndroidWebView = () => {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent || ''
-  // Android WebView 通常包含 'wv' 标识或者没有 Chrome/Version 但有 Android
-  // 或者用户代理中包含特定 App 的标识
-  return /Android/.test(ua) && (
-    /wv/.test(ua) ||
-    (/Version\/[\d.]+/.test(ua) && !/Chrome/.test(ua)) ||
-    // 某些 WebView 会有自定义 UA 但仍然缺少完整的 Chrome 标识
-    (/Android/.test(ua) && !/Chrome\/[\d.]+\sMobile\sSafari/.test(ua) && /Safari/.test(ua))
-  )
+  
+  // 检查是否为 Android 设备
+  const isAndroid = /Android/.test(ua)
+  if (!isAndroid) return false
+  
+  // Android WebView 检测规则:
+  // 1. 包含 'wv' 标识（官方 WebView 标识）
+  const hasWebViewMarker = /\swv\s/.test(ua) || /\swv$/.test(ua) || /;\swv\)/.test(ua)
+  
+  // 2. 旧版 WebView: 有 Version/x.x 但没有 Chrome
+  const hasVersionWithoutChrome = /Version\/[\d.]+/.test(ua) && !/Chrome/.test(ua)
+  
+  // 3. 缺少完整的 Chrome Mobile Safari 标识（某些自定义 WebView）
+  const hasSafariButNotChromeMobile = /Safari/.test(ua) && !/Chrome\/[\d.]+\sMobile\sSafari/.test(ua)
+  
+  return hasWebViewMarker || hasVersionWithoutChrome || hasSafariButNotChromeMobile
 }
 
 /**
