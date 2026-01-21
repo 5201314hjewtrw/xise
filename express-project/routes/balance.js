@@ -62,6 +62,35 @@ const updateUserPoints = async (userId, amount, type, reason) => {
   return newPoints;
 };
 
+/**
+ * @swagger
+ * /balance/config:
+ *   get:
+ *     summary: 获取余额中心配置
+ *     tags: [余额]
+ *     responses:
+ *       200:
+ *         description: 成功返回配置信息
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     enabled:
+ *                       type: boolean
+ *                       description: 余额中心是否启用
+ *                     exchangeRateIn:
+ *                       type: number
+ *                       description: 兑入汇率
+ *                     exchangeRateOut:
+ *                       type: number
+ *                       description: 兑出汇率
+ */
 // 获取余额中心配置（前端需要）
 router.get('/config', (req, res) => {
   res.json({
@@ -75,6 +104,35 @@ router.get('/config', (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /balance/local-points:
+ *   get:
+ *     summary: 获取用户石榴点余额
+ *     tags: [余额]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回用户石榴点余额
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     points:
+ *                       type: number
+ *                       description: 石榴点余额
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取用户石榴点余额
 router.get('/local-points', authenticateToken, async (req, res) => {
   try {
@@ -97,6 +155,45 @@ router.get('/local-points', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /balance/user-balance:
+ *   get:
+ *     summary: 获取用户外部余额信息
+ *     tags: [余额]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回用户余额信息
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     localPoints:
+ *                       type: number
+ *                       description: 本地石榴点余额
+ *                       example: 100.50
+ *                     externalBalance:
+ *                       type: number
+ *                       description: 外部余额
+ *                       example: 200.00
+ *       400:
+ *         description: 余额中心功能未启用或用户未绑定OAuth2账号
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 用户不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取用户外部余额信息
 router.get('/user-balance', authenticateToken, async (req, res) => {
   try {
@@ -170,6 +267,54 @@ router.get('/user-balance', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /balance/exchange-in:
+ *   post:
+ *     summary: 兑入石榴点（从用户中心转入本站）
+ *     tags: [余额]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - amount
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 description: 兑换金额
+ *                 example: 100
+ *     responses:
+ *       200:
+ *         description: 兑入成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 兑入成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     newBalance:
+ *                       type: number
+ *                       description: 新的石榴点余额
+ *       400:
+ *         description: 请求参数错误或余额不足
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 兑入石榴点（从用户中心转入本站）
 router.post('/exchange-in', authenticateToken, async (req, res) => {
   try {
@@ -273,6 +418,54 @@ router.post('/exchange-in', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /balance/exchange-out:
+ *   post:
+ *     summary: 兑出石榴点（从本站转出到用户中心）
+ *     tags: [余额]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - amount
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 description: 兑出金额
+ *                 example: 50
+ *     responses:
+ *       200:
+ *         description: 兑出成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 兑出成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     newBalance:
+ *                       type: number
+ *                       description: 新的石榴点余额
+ *       400:
+ *         description: 请求参数错误或石榴点不足
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 兑出石榴点（从本站转出到用户中心）
 router.post('/exchange-out', authenticateToken, async (req, res) => {
   try {
@@ -382,6 +575,62 @@ router.post('/exchange-out', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /balance/purchase-content:
+ *   post:
+ *     summary: 购买付费内容
+ *     tags: [余额]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - postId
+ *             properties:
+ *               postId:
+ *                 type: integer
+ *                 description: 帖子ID
+ *                 example: 123
+ *     responses:
+ *       200:
+ *         description: 购买成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 购买成功
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     purchased:
+ *                       type: boolean
+ *                       example: true
+ *                     price:
+ *                       type: number
+ *                       description: 支付的价格
+ *                     newBalance:
+ *                       type: number
+ *                       description: 新的石榴点余额
+ *       400:
+ *         description: 请求参数错误、石榴点不足或不能购买自己的内容
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 帖子不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 购买付费内容
 router.post('/purchase-content', authenticateToken, async (req, res) => {
   try {
@@ -528,6 +777,49 @@ router.post('/purchase-content', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /balance/check-purchase/{postId}:
+ *   get:
+ *     summary: 检查用户是否已购买某个帖子
+ *     tags: [余额]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: postId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 帖子ID
+ *         example: 123
+ *     responses:
+ *       200:
+ *         description: 成功返回购买状态
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     hasPurchased:
+ *                       type: boolean
+ *                       description: 是否已购买
+ *                       example: true
+ *                     purchasedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       description: 购买时间
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 检查用户是否已购买某个帖子
 router.get('/check-purchase/:postId', authenticateToken, async (req, res) => {
   try {

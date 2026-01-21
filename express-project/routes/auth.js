@@ -90,6 +90,44 @@ const verifyGeetestCaptcha = async (geetestData) => {
   }
 };
 
+/**
+ * @swagger
+ * /auth/auth-config:
+ *   get:
+ *     summary: 获取认证配置状态
+ *     tags: [认证]
+ *     responses:
+ *       200:
+ *         description: 成功返回认证配置信息
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     emailEnabled:
+ *                       type: boolean
+ *                       description: 邮件功能是否启用
+ *                     oauth2Enabled:
+ *                       type: boolean
+ *                       description: OAuth2是否启用
+ *                     oauth2OnlyLogin:
+ *                       type: boolean
+ *                       description: 是否仅OAuth2登录
+ *                     oauth2LoginUrl:
+ *                       type: string
+ *                       description: OAuth2登录URL
+ *                     geetestEnabled:
+ *                       type: boolean
+ *                       description: 极验验证码是否启用
+ *                     geetestCaptchaId:
+ *                       type: string
+ *                       description: 极验验证码ID
+ */
 // 获取认证配置状态（包括邮件功能和OAuth2配置）
 router.get('/auth-config', (req, res) => {
   res.json({
@@ -108,6 +146,29 @@ router.get('/auth-config', (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /auth/email-config:
+ *   get:
+ *     summary: 获取邮件功能配置状态
+ *     tags: [认证]
+ *     responses:
+ *       200:
+ *         description: 成功返回邮件配置状态
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     emailEnabled:
+ *                       type: boolean
+ *                       description: 邮件功能是否启用
+ */
 // 获取邮件功能配置状态（保持向后兼容）
 router.get('/email-config', (req, res) => {
   res.json({
@@ -119,6 +180,34 @@ router.get('/email-config', (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /auth/captcha:
+ *   get:
+ *     summary: 生成图形验证码
+ *     tags: [认证]
+ *     responses:
+ *       200:
+ *         description: 成功返回验证码
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     captchaId:
+ *                       type: string
+ *                       description: 验证码ID
+ *                     captchaSvg:
+ *                       type: string
+ *                       description: SVG格式的验证码图片
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 生成验证码
 router.get('/captcha', (req, res) => {
   try {
@@ -177,6 +266,40 @@ router.get('/captcha', (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/check-user-id:
+ *   get:
+ *     summary: 检查用户ID是否已存在
+ *     tags: [认证]
+ *     parameters:
+ *       - in: query
+ *         name: user_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 要检查的汐社号
+ *     responses:
+ *       200:
+ *         description: 返回用户ID是否可用
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     isUnique:
+ *                       type: boolean
+ *                       description: 是否可用
+ *       400:
+ *         description: 请求参数错误
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 检查用户ID是否已存在
 router.get('/check-user-id', async (req, res) => {
   try {
@@ -201,6 +324,44 @@ router.get('/check-user-id', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/send-email-code:
+ *   post:
+ *     summary: 发送邮箱验证码
+ *     tags: [认证]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 邮箱地址
+ *     responses:
+ *       200:
+ *         description: 验证码发送成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 验证码发送成功，请查收邮箱
+ *       400:
+ *         description: 请求参数错误或邮件功能未启用
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 发送邮箱验证码
 router.post('/send-email-code', async (req, res) => {
   try {
@@ -262,6 +423,50 @@ router.post('/send-email-code', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/bind-email:
+ *   post:
+ *     summary: 绑定邮箱
+ *     tags: [认证]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - emailCode
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 邮箱地址
+ *               emailCode:
+ *                 type: string
+ *                 description: 邮箱验证码
+ *     responses:
+ *       200:
+ *         description: 邮箱绑定成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 请求参数错误
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 绑定邮箱
 router.post('/bind-email', authenticateToken, async (req, res) => {
   try {
@@ -331,6 +536,48 @@ router.post('/bind-email', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/send-reset-code:
+ *   post:
+ *     summary: 发送找回密码验证码
+ *     tags: [认证]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 邮箱地址
+ *     responses:
+ *       200:
+ *         description: 验证码发送成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user_id:
+ *                       type: string
+ *                       description: 用户汐社号
+ *       400:
+ *         description: 请求参数错误或邮箱未绑定
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 发送找回密码验证码
 router.post('/send-reset-code', async (req, res) => {
   try {
@@ -396,6 +643,46 @@ router.post('/send-reset-code', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/verify-reset-code:
+ *   post:
+ *     summary: 验证找回密码验证码
+ *     tags: [认证]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - emailCode
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 邮箱地址
+ *               emailCode:
+ *                 type: string
+ *                 description: 邮箱验证码
+ *     responses:
+ *       200:
+ *         description: 验证码验证成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 验证码错误或已过期
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 验证找回密码验证码
 router.post('/verify-reset-code', async (req, res) => {
   try {
@@ -436,6 +723,52 @@ router.post('/verify-reset-code', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: 重置密码
+ *     tags: [认证]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - emailCode
+ *               - newPassword
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: 邮箱地址
+ *               emailCode:
+ *                 type: string
+ *                 description: 邮箱验证码
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 6
+ *                 maxLength: 20
+ *                 description: 新密码
+ *     responses:
+ *       200:
+ *         description: 密码重置成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 请求参数错误
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 重置密码
 router.post('/reset-password', async (req, res) => {
   try {
@@ -493,6 +826,33 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/unbind-email:
+ *   delete:
+ *     summary: 解除邮箱绑定
+ *     tags: [认证]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 邮箱解绑成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 邮件功能未启用或未绑定邮箱
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 解除邮箱绑定
 router.delete('/unbind-email', authenticateToken, async (req, res) => {
   try {
@@ -537,6 +897,68 @@ router.delete('/unbind-email', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: 用户注册
+ *     tags: [认证]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user_id
+ *               - nickname
+ *               - password
+ *             properties:
+ *               user_id:
+ *                 type: string
+ *                 description: 汐社号
+ *               nickname:
+ *                 type: string
+ *                 description: 用户昵称
+ *               password:
+ *                 type: string
+ *                 description: 密码
+ *               captchaId:
+ *                 type: string
+ *                 description: 验证码ID
+ *               captchaText:
+ *                 type: string
+ *                 description: 验证码文本
+ *               email:
+ *                 type: string
+ *                 description: 邮箱地址
+ *               emailCode:
+ *                 type: string
+ *                 description: 邮箱验证码
+ *     responses:
+ *       200:
+ *         description: 注册成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     access_token:
+ *                       type: string
+ *                     refresh_token:
+ *                       type: string
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *       400:
+ *         description: 请求参数错误
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 用户注册
 router.post('/register', async (req, res) => {
   try {
@@ -788,6 +1210,54 @@ router.post('/register', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: 用户登录
+ *     tags: [认证]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user_id
+ *               - password
+ *             properties:
+ *               user_id:
+ *                 type: string
+ *                 description: 汐社号
+ *               password:
+ *                 type: string
+ *                 description: 密码
+ *     responses:
+ *       200:
+ *         description: 登录成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     access_token:
+ *                       type: string
+ *                     refresh_token:
+ *                       type: string
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *       400:
+ *         description: 请求参数错误或用户不存在
+ *       403:
+ *         description: 账户已被禁用
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 用户登录
 router.post('/login', async (req, res) => {
   try {
@@ -892,6 +1362,46 @@ router.post('/login', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     summary: 刷新访问令牌
+ *     tags: [认证]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refresh_token
+ *             properties:
+ *               refresh_token:
+ *                 type: string
+ *                 description: 刷新令牌
+ *     responses:
+ *       200:
+ *         description: 刷新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     access_token:
+ *                       type: string
+ *                     expires_in:
+ *                       type: integer
+ *       400:
+ *         description: 刷新令牌无效
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 刷新令牌
 router.post('/refresh', async (req, res) => {
   try {
@@ -967,6 +1477,31 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: 退出登录
+ *     tags: [认证]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 退出成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 退出登录
 router.post('/logout', authenticateToken, async (req, res) => {
   try {
@@ -991,6 +1526,33 @@ router.post('/logout', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/me:
+ *   get:
+ *     summary: 获取当前用户信息
+ *     tags: [认证]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回当前用户信息
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 用户不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取当前用户信息
 router.get('/me', authenticateToken, async (req, res) => {
   try {
@@ -1030,6 +1592,57 @@ router.get('/me', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/admin/login:
+ *   post:
+ *     summary: 管理员登录
+ *     tags: [管理]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: 管理员用户名
+ *               password:
+ *                 type: string
+ *                 description: 管理员密码
+ *     responses:
+ *       200:
+ *         description: 登录成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     token:
+ *                       type: string
+ *                     admin:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                         username:
+ *                           type: string
+ *       400:
+ *         description: 用户名或密码错误
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 管理员登录
 router.post('/admin/login', async (req, res) => {
   try {
@@ -1085,6 +1698,38 @@ router.post('/admin/login', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /auth/admin/me:
+ *   get:
+ *     summary: 获取当前管理员信息
+ *     tags: [管理]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     username:
+ *                       type: string
+ *       401:
+ *         description: 未授权
+ *       403:
+ *         description: 权限不足
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取当前管理员信息
 router.get('/admin/me', authenticateToken, async (req, res) => {
   try {

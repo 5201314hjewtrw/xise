@@ -12,6 +12,36 @@ const settingsService = require('../utils/settingsService')
 // ===================== AI审核设置 =====================
 // 使用 Redis 持久化的设置服务
 
+/**
+ * @swagger
+ * /admin/ai-review-status:
+ *   get:
+ *     summary: 获取AI审核状态
+ *     tags: [管理]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回AI审核状态
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     enabled:
+ *                       type: boolean
+ *                     username_enabled:
+ *                       type: boolean
+ *                     content_enabled:
+ *                       type: boolean
+ *       401:
+ *         description: 未授权
+ */
 // 兼容旧接口：获取整体AI审核状态
 router.get('/ai-review-status', adminAuth, (req, res) => {
   const usernameEnabled = settingsService.isAiUsernameReviewEnabled()
@@ -44,6 +74,32 @@ const isAiAutoReviewEnabled = () => settingsService.isAiAutoReviewEnabled()
 
 // ===================== 游客访问限制设置 =====================
 
+/**
+ * @swagger
+ * /admin/guest-access-status:
+ *   get:
+ *     summary: 获取游客访问限制状态
+ *     tags: [管理]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回游客访问限制状态
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     restricted:
+ *                       type: boolean
+ *       401:
+ *         description: 未授权
+ */
 // 获取游客访问限制状态
 router.get('/guest-access-status', adminAuth, (req, res) => {
   const restricted = settingsService.isGuestAccessRestricted()

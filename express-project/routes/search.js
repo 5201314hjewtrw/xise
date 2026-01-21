@@ -5,6 +5,52 @@ const { prisma } = require('../config/config');
 const { optionalAuthWithGuestRestriction } = require('../middleware/auth');
 const { protectPostListItem } = require('../utils/paidContentHelper');
 
+/**
+ * @swagger
+ * /search:
+ *   get:
+ *     summary: 通用搜索接口
+ *     tags: [搜索]
+ *     parameters:
+ *       - in: query
+ *         name: keyword
+ *         schema:
+ *           type: string
+ *         description: 搜索关键词
+ *       - in: query
+ *         name: tag
+ *         schema:
+ *           type: string
+ *         description: 标签名称
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [all, posts, videos, users]
+ *           default: all
+ *         description: 搜索类型
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *     responses:
+ *       200:
+ *         description: 搜索成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 搜索（通用搜索接口）
 router.get('/', optionalAuthWithGuestRestriction, async (req, res) => {
   try {

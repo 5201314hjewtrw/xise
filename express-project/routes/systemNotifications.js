@@ -4,6 +4,44 @@ const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
 const prisma = require('../utils/prisma');
 const { authenticateToken } = require('../middleware/auth');
 
+/**
+ * @swagger
+ * /system-notifications/pending:
+ *   get:
+ *     summary: 获取当前用户未确认的活跃系统通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回未确认的系统通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       title:
+ *                         type: string
+ *                       content:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                       priority:
+ *                         type: integer
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取当前用户未确认的活跃系统通知
 router.get('/pending', authenticateToken, async (req, res) => {
   try {
@@ -69,6 +107,37 @@ router.get('/pending', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /system-notifications/pending-count:
+ *   get:
+ *     summary: 获取未确认系统通知的数量
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 成功返回未确认系统通知数量
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     count:
+ *                       type: integer
+ *                       description: 未确认的系统通知数量
+ *                       example: 3
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取未确认系统通知的数量
 router.get('/pending-count', authenticateToken, async (req, res) => {
   try {
@@ -117,6 +186,42 @@ router.get('/pending-count', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /system-notifications/{id}/confirm:
+ *   post:
+ *     summary: 确认系统通知
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: 系统通知ID
+ *     responses:
+ *       200:
+ *         description: 确认成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: 确认成功
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 通知不存在
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 确认系统通知（用户点击确认后调用）
 router.post('/:id/confirm', authenticateToken, async (req, res) => {
   try {
@@ -163,6 +268,45 @@ router.post('/:id/confirm', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /system-notifications/history:
+ *   get:
+ *     summary: 获取所有系统通知列表（包括历史的）
+ *     tags: [通知]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 页码
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: 每页数量
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [system, activity]
+ *         description: 通知类型
+ *     responses:
+ *       200:
+ *         description: 成功返回系统通知列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaginatedResponse'
+ *       401:
+ *         description: 未授权
+ *       500:
+ *         description: 服务器内部错误
+ */
 // 获取所有系统通知列表（包括历史的）
 router.get('/history', authenticateToken, async (req, res) => {
   try {
