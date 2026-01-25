@@ -17,6 +17,7 @@ const {
 } = require('../utils/paidContentHelper');
 const { getRecommendedPosts, getHotPosts } = require('../utils/recommendationService');
 const { invalidate } = require('../utils/cache');
+const { checkAndDistributeActivityRewards } = require('../utils/activityRewardService');
 
 // Post type constants
 const POST_TYPE_IMAGE = 1;
@@ -657,6 +658,11 @@ router.get('/:id', optionalAuthWithGuestRestriction, async (req, res) => {
 
     // Increment view count
     await prisma.post.update({ where: { id: postId }, data: { view_count: { increment: 1 } } });
+    
+    // 检查笔记作者的活动奖励（异步执行，不阻塞响应）
+    checkAndDistributeActivityRewards(post.user_id).catch(err => 
+      console.error('检查活动奖励失败:', err)
+    );
 
     const formatted = {
       id: Number(post.id),
@@ -1127,6 +1133,12 @@ router.post('/:id/collect', authenticateToken, async (req, res) => {
         const notificationData = NotificationHelper.createCollectPostNotification(Number(post.user_id), Number(userId), Number(postId));
         await NotificationHelper.insertNotification(prisma, notificationData);
       }
+      
+      // 检查笔记作者的活动奖励（异步执行，不阻塞响应）
+      checkAndDistributeActivityRewards(post.user_id).catch(err => 
+        console.error('检查活动奖励失败:', err)
+      );
+      
       res.json({ code: RESPONSE_CODES.SUCCESS, message: '收藏成功', data: { collected: true } });
     }
   } catch (error) {

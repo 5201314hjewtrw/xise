@@ -117,7 +117,8 @@ const getEarningsTypeLabel = (type) => {
     tip: '打赏收入',
     withdraw: '提现',
     extended_daily: '激励奖励',
-    quality_reward: '质量奖励'
+    quality_reward: '质量奖励',
+    activity_reward: '活动奖励'
   }
   return typeMap[type] || type
 }
