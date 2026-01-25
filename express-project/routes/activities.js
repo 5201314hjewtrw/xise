@@ -7,15 +7,16 @@ const express = require('express');
 const router = express.Router();
 const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
 const prisma = require('../utils/prisma');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, optionalAuth } = require('../middleware/auth');
 
 // 获取活动列表（用户端，仅返回进行中的活动）
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const now = new Date();
+    const userId = req.user ? BigInt(req.user.id) : null;
 
     // 查询条件：活动进行中或激活状态
     const where = {
@@ -47,6 +48,20 @@ router.get('/', async (req, res) => {
       })
     ]);
 
+    // 如果用户已登录，获取其参与状态
+    let userParticipations = [];
+    if (userId) {
+      const activityIds = activities.map(a => a.id);
+      userParticipations = await prisma.activityParticipation.findMany({
+        where: {
+          user_id: userId,
+          activity_id: { in: activityIds }
+        },
+        select: { activity_id: true }
+      });
+    }
+    const participatedActivityIds = userParticipations.map(p => Number(p.activity_id));
+
     const formattedActivities = activities.map(a => ({
       id: Number(a.id),
       name: a.name,
@@ -66,6 +81,7 @@ router.get('/', async (req, res) => {
         name: t.tag.name
       })),
       participant_count: a._count.participations,
+      participated: participatedActivityIds.includes(Number(a.id)),
       created_at: a.created_at
     }));
 

@@ -1072,6 +1072,7 @@ export const activityApi = {
   },
 
   // 参与活动
+  // postId: 可选，关联到参与活动的笔记ID
   participate(activityId, postId = null) {
     return request.post(`/activities/${activityId}/participate`, { post_id: postId })
   },
