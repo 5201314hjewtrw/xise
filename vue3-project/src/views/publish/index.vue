@@ -345,6 +345,15 @@ onMounted(async () => {
   if (draftId && mode === 'edit') {
     await loadDraftData(draftId)
   }
+  
+  // 检查是否从活动页面跳转过来，需要预填充活动标签
+  const activityTags = route.query.activityTags
+  if (activityTags && typeof activityTags === 'string') {
+    const tagsArray = activityTags.split(',').map(t => t.trim()).filter(t => t)
+    if (tagsArray.length > 0) {
+      form.tags = tagsArray
+    }
+  }
 })
 
 onUnmounted(() => {

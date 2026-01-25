@@ -343,6 +343,20 @@ const participateActivity = async (activityId) => {
       if (activity) {
         activity.participated = true
         activity.participant_count = (activity.participant_count || 0) + 1
+        
+        // 获取活动标签并跳转到发布页
+        const activityTags = activity.tags && activity.tags.length > 0 
+          ? activity.tags.map(t => t.name || t).join(',')
+          : ''
+        
+        // 跳转到发布页，始终传递activityId，可选传递activityTags
+        router.push({
+          path: '/publish',
+          query: { 
+            activityId: activity.id,
+            ...(activityTags && { activityTags })
+          }
+        })
       }
     }
   } catch (error) {

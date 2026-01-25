@@ -248,12 +248,21 @@ export async function uploadImage(file, options = {}) {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 60000) // 60秒超时
 
+    // 自动检测token类型（管理员或普通用户）
+    const adminToken = localStorage.getItem('admin_token')
+    const userToken = localStorage.getItem('token')
+    const token = adminToken || userToken
+
+    if (!token) {
+      throw new Error('未登录，请先登录')
+    }
+
     const response = await fetch('/api/upload/single', {
       method: 'POST',
       body: formData,
       signal: controller.signal,
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${token}`
       }
     })
 
