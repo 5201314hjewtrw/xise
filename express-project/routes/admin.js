@@ -3697,8 +3697,7 @@ router.get('/activities', adminAuth, async (req, res) => {
       is_active: a.is_active,
       image_url: a.image_url,
       images: a.image_url ? [a.image_url] : [],
-      tags: a.tags.map(t => t.tag.name),
-      tag_ids: a.tags.map(t => t.tag.id),
+      tags: a.tags.map(t => ({ id: t.tag.id, name: t.tag.name })),
       participant_count: a._count.participations,
       created_at: a.created_at,
       updated_at: a.updated_at
