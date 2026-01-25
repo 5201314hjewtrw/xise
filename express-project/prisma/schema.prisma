@@ -447,11 +447,89 @@ model Tag {
   use_count  Int      @default(0)
   created_at DateTime @default(now())
 
-  posts PostTag[]
+  posts      PostTag[]
+  activities ActivityTag[]
 
   @@index([name], name: "idx_tag_name")
   @@index([use_count], name: "idx_tag_use_count")
   @@map("tags")
+}
+
+// 活动状态枚举
+enum ActivityStatus {
+  draft      // 草稿
+  active     // 进行中
+  ended      // 已结束
+}
+
+// 活动表
+model Activity {
+  id                BigInt         @id @default(autoincrement())
+  name              String         @db.VarChar(200)                // 活动名称
+  content           String         @db.Text                        // 活动内容
+  reward            String?        @db.VarChar(500)                // 活动奖励描述
+  reward_amount     Decimal?       @db.Decimal(10, 2)              // 奖励金额
+  target_likes      Int            @default(0)                     // 目标点赞数
+  target_comments   Int            @default(0)                     // 目标评论数
+  target_collections Int           @default(0)                     // 目标收藏数
+  target_views      Int            @default(0)                     // 目标浏览数
+  start_time        DateTime       @default(now())                 // 开始时间
+  end_time          DateTime                                       // 截止日期
+  status            ActivityStatus @default(draft)                 // 活动状态
+  is_active         Boolean        @default(true)                  // 是否启用
+  image_url         String?        @db.VarChar(500)                // 活动图片
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+
+  tags              ActivityTag[]
+  participations    ActivityParticipation[]
+
+  @@index([status], name: "idx_activity_status")
+  @@index([is_active], name: "idx_activity_is_active")
+  @@index([end_time], name: "idx_activity_end_time")
+  @@index([start_time, end_time], name: "idx_activity_time_range")
+  @@map("activities")
+}
+
+// 活动标签关联表
+model ActivityTag {
+  id          BigInt   @id @default(autoincrement())
+  activity_id BigInt
+  tag_id      Int
+  created_at  DateTime @default(now())
+
+  activity Activity @relation(fields: [activity_id], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@unique([activity_id, tag_id], name: "uk_activity_tag")
+  @@index([activity_id], name: "idx_activity_tag_activity_id")
+  @@index([tag_id], name: "idx_activity_tag_tag_id")
+  @@map("activity_tags")
+}
+
+// 活动参与记录表
+model ActivityParticipation {
+  id            BigInt   @id @default(autoincrement())
+  activity_id   BigInt
+  user_id       BigInt
+  post_id       BigInt?                                            // 参与活动的笔记ID
+  likes_count   Int      @default(0)                               // 累计点赞数
+  comments_count Int     @default(0)                               // 累计评论数
+  collections_count Int  @default(0)                               // 累计收藏数
+  views_count   Int      @default(0)                               // 累计浏览数
+  is_completed  Boolean  @default(false)                           // 是否完成目标
+  is_rewarded   Boolean  @default(false)                           // 是否已发放奖励
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  activity Activity @relation(fields: [activity_id], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([activity_id, user_id], name: "uk_activity_user")
+  @@index([activity_id], name: "idx_activity_participation_activity_id")
+  @@index([user_id], name: "idx_activity_participation_user_id")
+  @@index([is_completed], name: "idx_activity_participation_completed")
+  @@map("activity_participations")
 }
 
 // 用户作者订阅表
@@ -637,6 +715,7 @@ model User {
   purchasedContentAsAuthor        UserPurchasedContent[]           @relation("PurchasedContentAuthor")
   browsingHistory                 BrowsingHistory[]
   systemNotificationConfirmations SystemNotificationConfirmation[]
+  activityParticipations          ActivityParticipation[]
 
   @@index([user_id], name: "idx_user_user_id")
   @@index([email], name: "idx_user_email")

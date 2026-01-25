@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import * as echarts from 'echarts'
-import { creatorCenterApi } from '@/api/index.js'
+import { creatorCenterApi, activityApi } from '@/api/index.js'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -60,6 +60,12 @@ const qualityRewardsPagination = ref({ page: 1, limit: 15, total: 0, totalPages:
 const qualityRewardsLoading = ref(false)
 const qualityRewardsTotalEarnings = ref(0)
 
+// 活动相关
+const activities = ref([])
+const activitiesPagination = ref({ page: 1, limit: 15, total: 0, totalPages: 0 })
+const activitiesLoading = ref(false)
+const participatingLoading = ref(null) // 用于记录正在参与的活动ID
+
 // 提现相关
 const showWithdrawModal = ref(false)
 const withdrawAmount = ref('')
@@ -83,6 +89,24 @@ const formatNumber = (num) => {
 const formatDate = (dateStr) => {
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+// 格式化完整日期
+const formatFullDate = (dateStr) => {
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+// 计算活动剩余时间
+const getTimeRemaining = (endTime) => {
+  const now = new Date()
+  const end = new Date(endTime)
+  const diff = end - now
+  if (diff <= 0) return '已结束'
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  if (days > 0) return `${days}天${hours}小时`
+  return `${hours}小时`
 }
 
 // 获取收益类型标签
@@ -284,6 +308,48 @@ const switchTab = (tab) => {
   if (tab === 'earnings' && earningsLog.value.length === 0) loadEarningsLog()
   else if (tab === 'content' && paidContent.value.length === 0) loadPaidContent()
   else if (tab === 'quality' && qualityRewards.value.length === 0) loadQualityRewards()
+  else if (tab === 'activities' && activities.value.length === 0) loadActivities()
+}
+
+// 加载活动列表
+const loadActivities = async (page = 1) => {
+  try {
+    activitiesLoading.value = true
+    const response = await activityApi.getActivities({ page, limit: activitiesPagination.value.limit })
+    if (response.success) {
+      activities.value = response.data.list
+      activitiesPagination.value = response.data.pagination
+    }
+  } catch (error) {
+    console.error('获取活动列表失败:', error)
+  } finally {
+    activitiesLoading.value = false
+  }
+}
+
+// 参与活动
+const participateActivity = async (activityId) => {
+  if (!userStore.isLoggedIn) {
+    router.push('/user')
+    return
+  }
+  
+  try {
+    participatingLoading.value = activityId
+    const response = await activityApi.participate(activityId)
+    if (response.success) {
+      // 更新活动列表中的参与状态
+      const activity = activities.value.find(a => a.id === activityId)
+      if (activity) {
+        activity.participated = true
+        activity.participant_count = (activity.participant_count || 0) + 1
+      }
+    }
+  } catch (error) {
+    console.error('参与活动失败:', error)
+  } finally {
+    participatingLoading.value = null
+  }
 }
 
 // 提现相关
@@ -414,6 +480,9 @@ onUnmounted(() => {
         <button class="tab" :class="{ active: activeTab === 'quality' }" @click="switchTab('quality')">
           质量奖励
         </button>
+        <button class="tab" :class="{ active: activeTab === 'activities' }" @click="switchTab('activities')">
+          参与活动
+        </button>
       </div>
 
       <!-- 收益明细 -->
@@ -541,6 +610,77 @@ onUnmounted(() => {
           </button>
           <span>{{ qualityRewardsPagination.page }} / {{ qualityRewardsPagination.totalPages }}</span>
           <button :disabled="qualityRewardsPagination.page >= qualityRewardsPagination.totalPages" @click="loadQualityRewards(qualityRewardsPagination.page + 1)">
+            <Icon icon="mdi:chevron-right" />
+          </button>
+        </div>
+      </div>
+
+      <!-- 参与活动 -->
+      <div class="tab-content" v-show="activeTab === 'activities'">
+        <div class="activity-list" v-if="!activitiesLoading && activities.length > 0">
+          <div class="activity-item" v-for="activity in activities" :key="activity.id">
+            <div class="activity-cover" v-if="activity.image_url">
+              <img :src="activity.image_url" alt="" />
+            </div>
+            <div class="activity-info">
+              <h4 class="activity-title">{{ activity.name }}</h4>
+              <div class="activity-content">{{ activity.content }}</div>
+              <div class="activity-meta">
+                <div class="activity-reward" v-if="activity.reward">
+                  <Icon icon="mdi:gift-outline" />
+                  <span>{{ activity.reward }}</span>
+                  <span v-if="activity.reward_amount" class="reward-amount">¥{{ formatMoney(activity.reward_amount) }}</span>
+                </div>
+                <div class="activity-targets" v-if="activity.target_likes || activity.target_comments || activity.target_collections || activity.target_views">
+                  <span v-if="activity.target_likes"><Icon icon="mdi:heart-outline" /> {{ activity.target_likes }}</span>
+                  <span v-if="activity.target_comments"><Icon icon="mdi:comment-outline" /> {{ activity.target_comments }}</span>
+                  <span v-if="activity.target_collections"><Icon icon="mdi:bookmark-outline" /> {{ activity.target_collections }}</span>
+                  <span v-if="activity.target_views"><Icon icon="mdi:eye-outline" /> {{ activity.target_views }}</span>
+                </div>
+              </div>
+              <div class="activity-tags" v-if="activity.tags && activity.tags.length > 0">
+                <span class="tag" v-for="tag in activity.tags" :key="tag.id">#{{ tag.name }}</span>
+              </div>
+              <div class="activity-footer">
+                <div class="activity-time">
+                  <Icon icon="mdi:clock-outline" />
+                  <span>剩余 {{ getTimeRemaining(activity.end_time) }}</span>
+                </div>
+                <div class="activity-participants">
+                  <Icon icon="mdi:account-group-outline" />
+                  <span>{{ activity.participant_count || 0 }}人参与</span>
+                </div>
+                <button 
+                  class="participate-btn" 
+                  :class="{ participated: activity.participated }"
+                  :disabled="activity.participated || participatingLoading === activity.id"
+                  @click="participateActivity(activity.id)"
+                >
+                  <Icon v-if="participatingLoading === activity.id" icon="mdi:loading" class="spin" />
+                  <span v-else-if="activity.participated">已参与</span>
+                  <span v-else>参与活动</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty" v-else-if="!activitiesLoading">
+          <Icon icon="mdi:party-popper" />
+          <p>暂无进行中的活动</p>
+          <p class="hint">活动期间发布带有活动标签的笔记即可参与</p>
+        </div>
+
+        <div class="loading-spinner" v-else>
+          <Icon icon="mdi:loading" class="spin" />
+        </div>
+
+        <div class="pagination" v-if="activitiesPagination.totalPages > 1">
+          <button :disabled="activitiesPagination.page <= 1" @click="loadActivities(activitiesPagination.page - 1)">
+            <Icon icon="mdi:chevron-left" />
+          </button>
+          <span>{{ activitiesPagination.page }} / {{ activitiesPagination.totalPages }}</span>
+          <button :disabled="activitiesPagination.page >= activitiesPagination.totalPages" @click="loadActivities(activitiesPagination.page + 1)">
             <Icon icon="mdi:chevron-right" />
           </button>
         </div>
@@ -1184,5 +1324,165 @@ onUnmounted(() => {
   font-size: 12px;
   color: #aaa;
   margin-top: 4px;
+}
+
+/* 活动列表样式 */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.activity-item {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.activity-cover {
+  width: 100%;
+  height: 160px;
+  overflow: hidden;
+}
+
+.activity-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.activity-info {
+  padding: 16px;
+}
+
+.activity-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 8px;
+}
+
+.activity-content {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.activity-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.activity-reward {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #f59e0b;
+}
+
+.activity-reward svg {
+  font-size: 16px;
+}
+
+.reward-amount {
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.activity-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: #888;
+}
+
+.activity-targets span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.activity-targets svg {
+  font-size: 14px;
+}
+
+.activity-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.activity-tags .tag {
+  padding: 4px 10px;
+  background: #f0f0f0;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #667eea;
+}
+
+.activity-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.activity-time,
+.activity-participants {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #888;
+}
+
+.activity-time svg,
+.activity-participants svg {
+  font-size: 14px;
+}
+
+.participate-btn {
+  margin-left: auto;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.participate-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.participate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.participate-btn.participated {
+  background: #e0e0e0;
+  color: #888;
 }
 </style>

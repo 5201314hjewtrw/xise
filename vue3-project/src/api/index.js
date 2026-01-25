@@ -914,6 +914,47 @@ export const adminApi = {
   // 切换工具栏项启用状态
   toggleUserToolbarActive(toolbarId) {
     return request.put(`/admin/user-toolbar/${toolbarId}/toggle-active`)
+  },
+
+  // ========== 活动管理 ==========
+  // 获取活动列表
+  getActivities(params = {}) {
+    return request.get('/admin/activities', { params })
+  },
+
+  // 创建活动
+  createActivity(data) {
+    return request.post('/admin/activities', data)
+  },
+
+  // 更新活动
+  updateActivity(activityId, data) {
+    return request.put(`/admin/activities/${activityId}`, data)
+  },
+
+  // 删除活动
+  deleteActivity(activityId) {
+    return request.delete(`/admin/activities/${activityId}`)
+  },
+
+  // 批量删除活动
+  batchDeleteActivities(ids) {
+    return request.delete('/admin/activities', { data: { ids } })
+  },
+
+  // 获取单个活动详情
+  getActivityDetail(activityId) {
+    return request.get(`/admin/activities/${activityId}`)
+  },
+
+  // 切换活动启用状态
+  toggleActivityActive(activityId) {
+    return request.put(`/admin/activities/${activityId}/toggle-active`)
+  },
+
+  // 获取活动参与者列表
+  getActivityParticipants(activityId, params = {}) {
+    return request.get(`/admin/activities/${activityId}/participants`, { params })
   }
 }
 
@@ -1015,5 +1056,33 @@ export const systemNotificationApi = {
   // 获取系统通知历史
   getHistory(params = {}) {
     return request.get('/system-notifications/history', { params })
+  }
+}
+
+// 活动API（用户端）
+export const activityApi = {
+  // 获取活动列表（进行中的）
+  getActivities(params = {}) {
+    return request.get('/activities', { params })
+  },
+
+  // 获取活动详情
+  getActivityDetail(activityId) {
+    return request.get(`/activities/${activityId}`)
+  },
+
+  // 参与活动
+  participate(activityId, postId = null) {
+    return request.post(`/activities/${activityId}/participate`, { post_id: postId })
+  },
+
+  // 获取用户参与的活动列表
+  getParticipated(params = {}) {
+    return request.get('/activities/user/participated', { params })
+  },
+
+  // 获取活动参与状态
+  getParticipationStatus(activityId) {
+    return request.get(`/activities/${activityId}/participation-status`)
   }
 }

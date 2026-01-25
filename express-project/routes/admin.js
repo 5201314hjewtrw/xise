@@ -3643,6 +3643,419 @@ router.get('/batch-upload/status/:batchId', adminAuth, async (req, res) => {
   }
 })
 
+// ===================== 活动管理 =====================
+
+// 活动状态映射
+const ACTIVITY_STATUS_TYPES = ['draft', 'active', 'ended']
+
+// 获取活动列表
+router.get('/activities', adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+    const { name, status, is_active, sortField = 'created_at', sortOrder = 'desc' } = req.query
+
+    const where = {}
+    if (name) where.name = { contains: name }
+    if (status && ACTIVITY_STATUS_TYPES.includes(status)) where.status = status
+    if (is_active !== undefined && is_active !== '') where.is_active = is_active === 'true' || is_active === '1'
+
+    const [total, activities] = await Promise.all([
+      prisma.activity.count({ where }),
+      prisma.activity.findMany({
+        where,
+        include: {
+          tags: {
+            include: {
+              tag: true
+            }
+          },
+          _count: {
+            select: { participations: true }
+          }
+        },
+        orderBy: { [sortField]: sortOrder.toLowerCase() },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedActivities = activities.map(a => ({
+      id: Number(a.id),
+      name: a.name,
+      content: a.content,
+      reward: a.reward,
+      reward_amount: a.reward_amount ? parseFloat(a.reward_amount) : null,
+      target_likes: a.target_likes,
+      target_comments: a.target_comments,
+      target_collections: a.target_collections,
+      target_views: a.target_views,
+      start_time: a.start_time,
+      end_time: a.end_time,
+      status: a.status,
+      is_active: a.is_active,
+      image_url: a.image_url,
+      images: a.image_url ? [a.image_url] : [],
+      tags: a.tags.map(t => t.tag.name),
+      tag_ids: a.tags.map(t => t.tag.id),
+      participant_count: a._count.participations,
+      created_at: a.created_at,
+      updated_at: a.updated_at
+    }))
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: formattedActivities, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取活动列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+// 获取单个活动详情
+router.get('/activities/:id', adminAuth, async (req, res) => {
+  try {
+    const activityId = BigInt(req.params.id)
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      include: {
+        tags: {
+          include: {
+            tag: true
+          }
+        },
+        _count: {
+          select: { participations: true }
+        }
+      }
+    })
+
+    if (!activity) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '活动不存在' })
+    }
+
+    const result = {
+      id: Number(activity.id),
+      name: activity.name,
+      content: activity.content,
+      reward: activity.reward,
+      reward_amount: activity.reward_amount ? parseFloat(activity.reward_amount) : null,
+      target_likes: activity.target_likes,
+      target_comments: activity.target_comments,
+      target_collections: activity.target_collections,
+      target_views: activity.target_views,
+      start_time: activity.start_time,
+      end_time: activity.end_time,
+      status: activity.status,
+      is_active: activity.is_active,
+      image_url: activity.image_url,
+      images: activity.image_url ? [activity.image_url] : [],
+      tags: activity.tags.map(t => t.tag.name),
+      tag_ids: activity.tags.map(t => t.tag.id),
+      participant_count: activity._count.participations,
+      created_at: activity.created_at,
+      updated_at: activity.updated_at
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: result, message: 'success' })
+  } catch (error) {
+    console.error('获取活动详情失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
+// 创建活动
+router.post('/activities', adminAuth, async (req, res) => {
+  try {
+    const { 
+      name, content, reward, reward_amount, 
+      target_likes, target_comments, target_collections, target_views,
+      start_time, end_time, status, is_active, image_url, images, tags 
+    } = req.body
+
+    if (!name || !name.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '活动名称不能为空' })
+    }
+
+    if (!content || !content.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '活动内容不能为空' })
+    }
+
+    if (!end_time) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '截止日期不能为空' })
+    }
+
+    // 支持images数组（优先）或image_url字符串
+    let finalImageUrl = null
+    if (images && Array.isArray(images) && images.length > 0) {
+      finalImageUrl = images[0]
+    } else if (image_url) {
+      finalImageUrl = image_url.trim()
+    }
+
+    const activity = await prisma.activity.create({
+      data: {
+        name: name.trim(),
+        content: content.trim(),
+        reward: reward?.trim() || null,
+        reward_amount: reward_amount ? parseFloat(reward_amount) : null,
+        target_likes: parseInt(target_likes) || 0,
+        target_comments: parseInt(target_comments) || 0,
+        target_collections: parseInt(target_collections) || 0,
+        target_views: parseInt(target_views) || 0,
+        start_time: start_time ? new Date(start_time) : new Date(),
+        end_time: new Date(end_time),
+        status: status && ACTIVITY_STATUS_TYPES.includes(status) ? status : 'draft',
+        is_active: is_active !== false,
+        image_url: finalImageUrl || null
+      }
+    })
+
+    // 处理标签关联
+    if (tags && Array.isArray(tags) && tags.length > 0) {
+      // 如果传入的是标签名称数组，先查找或创建标签
+      const tagRecords = await Promise.all(tags.map(async (tagName) => {
+        const name = typeof tagName === 'string' ? tagName.trim() : String(tagName)
+        if (!name) return null
+        
+        let tag = await prisma.tag.findUnique({ where: { name } })
+        if (!tag) {
+          tag = await prisma.tag.create({ data: { name } })
+        }
+        return tag
+      }))
+
+      const validTags = tagRecords.filter(t => t !== null)
+      
+      // 创建活动标签关联
+      if (validTags.length > 0) {
+        await prisma.activityTag.createMany({
+          data: validTags.map(tag => ({
+            activity_id: activity.id,
+            tag_id: tag.id
+          }))
+        })
+      }
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, data: { id: Number(activity.id) }, message: '创建成功' })
+  } catch (error) {
+    console.error('创建活动失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '创建失败' })
+  }
+})
+
+// 更新活动
+router.put('/activities/:id', adminAuth, async (req, res) => {
+  try {
+    const activityId = BigInt(req.params.id)
+    const { 
+      name, content, reward, reward_amount, 
+      target_likes, target_comments, target_collections, target_views,
+      start_time, end_time, status, is_active, image_url, images, tags 
+    } = req.body
+
+    const activity = await prisma.activity.findUnique({ where: { id: activityId } })
+    if (!activity) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '活动不存在' })
+    }
+
+    const updateData = {}
+    if (name !== undefined) {
+      if (!name.trim()) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '活动名称不能为空' })
+      }
+      updateData.name = name.trim()
+    }
+    if (content !== undefined) {
+      if (!content.trim()) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '活动内容不能为空' })
+      }
+      updateData.content = content.trim()
+    }
+    if (reward !== undefined) updateData.reward = reward?.trim() || null
+    if (reward_amount !== undefined) updateData.reward_amount = reward_amount ? parseFloat(reward_amount) : null
+    if (target_likes !== undefined) updateData.target_likes = parseInt(target_likes) || 0
+    if (target_comments !== undefined) updateData.target_comments = parseInt(target_comments) || 0
+    if (target_collections !== undefined) updateData.target_collections = parseInt(target_collections) || 0
+    if (target_views !== undefined) updateData.target_views = parseInt(target_views) || 0
+    if (start_time !== undefined) updateData.start_time = start_time ? new Date(start_time) : new Date()
+    if (end_time !== undefined) updateData.end_time = end_time ? new Date(end_time) : null
+    if (status !== undefined && ACTIVITY_STATUS_TYPES.includes(status)) updateData.status = status
+    if (is_active !== undefined) updateData.is_active = !!is_active
+
+    // 支持images数组（优先）或image_url字符串
+    if (images !== undefined) {
+      if (Array.isArray(images) && images.length > 0) {
+        updateData.image_url = images[0]
+      } else {
+        updateData.image_url = null
+      }
+    } else if (image_url !== undefined) {
+      updateData.image_url = image_url?.trim() || null
+    }
+
+    await prisma.activity.update({ where: { id: activityId }, data: updateData })
+
+    // 处理标签关联更新
+    if (tags !== undefined && Array.isArray(tags)) {
+      // 删除旧的标签关联
+      await prisma.activityTag.deleteMany({ where: { activity_id: activityId } })
+
+      // 创建新的标签关联
+      if (tags.length > 0) {
+        const tagRecords = await Promise.all(tags.map(async (tagName) => {
+          const name = typeof tagName === 'string' ? tagName.trim() : String(tagName)
+          if (!name) return null
+          
+          let tag = await prisma.tag.findUnique({ where: { name } })
+          if (!tag) {
+            tag = await prisma.tag.create({ data: { name } })
+          }
+          return tag
+        }))
+
+        const validTags = tagRecords.filter(t => t !== null)
+        
+        if (validTags.length > 0) {
+          await prisma.activityTag.createMany({
+            data: validTags.map(tag => ({
+              activity_id: activityId,
+              tag_id: tag.id
+            }))
+          })
+        }
+      }
+    }
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '更新成功' })
+  } catch (error) {
+    console.error('更新活动失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '更新失败' })
+  }
+})
+
+// 删除活动
+router.delete('/activities/:id', adminAuth, async (req, res) => {
+  try {
+    const activityId = BigInt(req.params.id)
+    
+    const activity = await prisma.activity.findUnique({ where: { id: activityId } })
+    if (!activity) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '活动不存在' })
+    }
+
+    await prisma.activity.delete({ where: { id: activityId } })
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '删除成功' })
+  } catch (error) {
+    console.error('删除活动失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// 批量删除活动
+router.delete('/activities', adminAuth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ code: RESPONSE_CODES.VALIDATION_ERROR, message: '请提供要删除的ID列表' })
+    }
+
+    const activityIds = ids.map(id => BigInt(id))
+    await prisma.activity.deleteMany({ where: { id: { in: activityIds } } })
+
+    res.json({ code: RESPONSE_CODES.SUCCESS, message: '成功删除 ' + ids.length + ' 条记录' })
+  } catch (error) {
+    console.error('批量删除活动失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '删除失败' })
+  }
+})
+
+// 切换活动启用状态
+router.put('/activities/:id/toggle-active', adminAuth, async (req, res) => {
+  try {
+    const activityId = BigInt(req.params.id)
+    
+    const activity = await prisma.activity.findUnique({ where: { id: activityId } })
+    if (!activity) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ code: RESPONSE_CODES.NOT_FOUND, message: '活动不存在' })
+    }
+
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: { is_active: !activity.is_active }
+    })
+
+    res.json({ 
+      code: RESPONSE_CODES.SUCCESS, 
+      message: activity.is_active ? '已禁用' : '已启用',
+      data: { is_active: !activity.is_active }
+    })
+  } catch (error) {
+    console.error('切换活动状态失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '操作失败' })
+  }
+})
+
+// 获取活动参与者列表
+router.get('/activities/:id/participants', adminAuth, async (req, res) => {
+  try {
+    const activityId = BigInt(req.params.id)
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const skip = (page - 1) * limit
+
+    const [total, participations] = await Promise.all([
+      prisma.activityParticipation.count({ where: { activity_id: activityId } }),
+      prisma.activityParticipation.findMany({
+        where: { activity_id: activityId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              user_id: true,
+              nickname: true,
+              avatar: true
+            }
+          }
+        },
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: skip
+      })
+    ])
+
+    const formattedList = participations.map(p => ({
+      id: Number(p.id),
+      user: {
+        id: Number(p.user.id),
+        user_id: p.user.user_id,
+        nickname: p.user.nickname,
+        avatar: p.user.avatar
+      },
+      likes_count: p.likes_count,
+      comments_count: p.comments_count,
+      collections_count: p.collections_count,
+      views_count: p.views_count,
+      is_completed: p.is_completed,
+      is_rewarded: p.is_rewarded,
+      created_at: p.created_at
+    }))
+
+    res.json({
+      code: RESPONSE_CODES.SUCCESS,
+      data: { data: formattedList, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
+      message: 'success'
+    })
+  } catch (error) {
+    console.error('获取活动参与者列表失败:', error)
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ code: RESPONSE_CODES.ERROR, message: '获取失败' })
+  }
+})
+
 // ===================== 系统通知管理 =====================
 
 // 系统通知类型映射
