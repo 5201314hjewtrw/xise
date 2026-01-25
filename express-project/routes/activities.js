@@ -191,7 +191,7 @@ router.post('/:id/participate', authenticateToken, async (req, res) => {
     }
 
     const now = new Date();
-    if (activity.status !== 'active' || activity.end_time < now) {
+    if (activity.status !== 'active' || activity.end_time < now || activity.start_time > now) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         code: RESPONSE_CODES.VALIDATION_ERROR,
         message: '活动已结束或未开始'
