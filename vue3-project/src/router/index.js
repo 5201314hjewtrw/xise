@@ -41,6 +41,7 @@ import BannedWordsManagement from '@/views/admin/BannedWordsManagement.vue'
 import SystemNotificationManagement from '@/views/admin/SystemNotificationManagement.vue'
 import NoteQualityManagement from '@/views/admin/NoteQualityManagement.vue'
 import SystemSettingsManagement from '@/views/admin/SystemSettingsManagement.vue'
+import ActivityManagement from '@/views/admin/ActivityManagement.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -319,6 +320,11 @@ const router = createRouter({
           path: 'system-settings',
           name: 'admin_system_settings',
           component: SystemSettingsManagement
+        },
+        {
+          path: 'activities',
+          name: 'admin_activities',
+          component: ActivityManagement
         }
       ]
     }

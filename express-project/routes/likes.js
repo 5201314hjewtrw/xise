@@ -4,6 +4,7 @@ const { HTTP_STATUS, RESPONSE_CODES, ERROR_MESSAGES } = require('../constants');
 const { prisma } = require('../config/config');
 const { authenticateToken } = require('../middleware/auth');
 const NotificationHelper = require('../utils/notificationHelper');
+const { checkAndDistributeActivityRewards } = require('../utils/activityRewardService');
 
 // 点赞/取消点赞
 router.post('/', authenticateToken, async (req, res) => {
@@ -127,6 +128,14 @@ router.post('/', authenticateToken, async (req, res) => {
           await NotificationHelper.insertNotification(prisma, notificationData);
         }
       }
+      
+      // 检查被点赞用户的活动奖励（异步执行，不阻塞响应）
+      if (targetUserId) {
+        checkAndDistributeActivityRewards(targetUserId).catch(err => 
+          console.error('检查活动奖励失败:', err)
+        );
+      }
+      
       console.log(`点赞成功 - 用户ID: ${userId}`);
       res.json({ code: RESPONSE_CODES.SUCCESS, message: '点赞成功', data: { liked: true } });
     }

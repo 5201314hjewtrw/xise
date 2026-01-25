@@ -10,6 +10,7 @@ const { auditComment, isAuditEnabled } = require('../utils/contentAudit');
 const { addContentAuditTask, addAuditLogTask, isQueueEnabled } = require('../utils/queueService');
 const { checkCommentBannedWords, getBannedWordAuditResult } = require('../utils/bannedWordsChecker');
 const { isAiContentReviewEnabled } = require('../utils/aiReviewHelper');
+const { checkAndDistributeActivityRewards } = require('../utils/activityRewardService');
 
 // 递归删除评论及其子评论，返回删除的评论总数
 async function deleteCommentRecursive(commentId) {
@@ -383,6 +384,11 @@ router.post('/', authenticateToken, async (req, res) => {
       where: { id: postIdBigInt },
       data: { comment_count: { increment: 1 } }
     });
+    
+    // 检查笔记作者的活动奖励（异步执行，不阻塞响应）
+    checkAndDistributeActivityRewards(post.user_id).catch(err => 
+      console.error('检查活动奖励失败:', err)
+    );
 
     // 创建通知
     if (parent_id) {
